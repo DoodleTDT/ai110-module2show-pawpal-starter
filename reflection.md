@@ -5,7 +5,16 @@
 **a. Initial design**
 
 - Briefly describe your initial UML design.
+The user should be able to identify themselves and the pet(s) they have. The user should be able to add/delete pet tasks from their list, ordering them by priority. The user can also pick a time frame they prefer for the task, as well as how long it may take. The assistant should be able to read that list of tasks and create a plan for the user to follow based on a 24 hour clock. The assistant should consider the priorities of each task. The assitant should also consider any constraints the user may have, including sleep schedule and outside events. The assistant should explain the plan to the user.
+
 - What classes did you include, and what responsibilities did you assign to each?
+User: creates tasks for the assistant to read, enters owner and pet information into the system, adds time preferences to tasks, adds priority ratings to tasks, adds outside events/times that restrict them
+
+Pet: Stores information about any pets the user adds. Should make a new 'pet' object for each pet the user owns.
+
+Task: Stores the tasks that the user adds. Lists them by priority and time preference. Should include pet related tasks and non-pet tasks as categories (requirements and constraints). Should store which pet(s) the task is for.
+
+Schedule: Where the assistant stores the daily plan for the user to view. Should only work from 12 am to 11:59 pm the same day.
 
 **b. Design changes**
 
