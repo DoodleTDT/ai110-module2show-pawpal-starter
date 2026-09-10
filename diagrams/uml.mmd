@@ -1,15 +1,59 @@
 classDiagram
-    %% Replace the placeholders below with your actual classes, attributes, methods, and relationships.
-    %% Keep this file updated so it matches your final implementation.
-
-    class ClassName {
-        +type attribute
-        +method() returnType
+    class User {
+        +str name
+        +list~Pet~ pets
+        +list~Task~ tasks
+        +Time wake_time
+        +Time sleep_time
+        +add_pet(pet) None
+        +add_task(task) None
+        +delete_task(task_id) None
+        +set_priority(task_id, priority) None
+        +set_time_preference(task_id, window, duration) None
+        +add_event(title, start, end) None
+        +awake_window() tuple
     }
 
-    class AnotherClass {
-        +type attribute
-        +method() returnType
+    class Pet {
+        +str pet_id
+        +str name
+        +str species
+        +int age
+        +str notes
     }
 
-    ClassName --> AnotherClass : relationship
+    class Task {
+        +str task_id
+        +str title
+        +str category
+        +int priority
+        +int duration_minutes
+        +Time preferred_start
+        +Time preferred_end
+        +bool is_fixed
+        +list~Pet~ pets
+        +Time assigned_start
+        +Time assigned_end
+        +str reason
+        +is_pet_task() bool
+        +blocks(start, end) bool
+        +assign(start, reason) None
+        +is_scheduled() bool
+        +describe() str
+    }
+
+    class Schedule {
+        +Date day
+        +list~Task~ tasks
+        +build(tasks, wake_time, sleep_time) None
+        +place_task(task) bool
+        +is_free(start, end) bool
+        +sort_by_priority(tasks) list~Task~
+        +explain() str
+    }
+
+    User "1" --> "0..*" Pet : owns
+    User "1" --> "0..*" Task : creates
+    Task "0..*" --> "0..*" Pet : is for
+    Schedule "1" --> "0..*" Task : places
+    User "1" --> "1" Schedule : views
