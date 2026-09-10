@@ -5,6 +5,8 @@ classDiagram
         +list~Task~ tasks
         +Time wake_time
         +Time sleep_time
+        +list~Schedule~ candidates
+        +Schedule saved_schedule
         +add_pet(pet) None
         +add_task(task) None
         +delete_task(task_id) None
@@ -12,6 +14,11 @@ classDiagram
         +set_time_preference(task_id, window, duration) None
         +add_event(title, start, end) None
         +awake_window() tuple
+        +request_schedule(strategy) Schedule
+        +request_alternative(strategy) Schedule
+        +compare_candidates() str
+        +choose_schedule(schedule_id) Schedule
+        +discard_unchosen(schedule_id) None
     }
 
     class Pet {
@@ -32,28 +39,31 @@ classDiagram
         +Time preferred_end
         +bool is_fixed
         +list~Pet~ pets
-        +Time assigned_start
-        +Time assigned_end
-        +str reason
         +is_pet_task() bool
         +blocks(start, end) bool
-        +assign(start, reason) None
-        +is_scheduled() bool
         +describe() str
     }
 
     class Schedule {
+        +str schedule_id
+        +str label
         +Date day
-        +list~Task~ tasks
+        +str strategy
+        +bool is_saved
+        +dict~str, tuple~ placements
         +build(tasks, wake_time, sleep_time) None
         +place_task(task) bool
         +is_free(start, end) bool
-        +sort_by_priority(tasks) list~Task~
+        +sort_by_strategy(tasks) list~Task~
+        +placed_tasks() list~Task~
+        +unplaced_tasks() list~Task~
+        +summary() dict
         +explain() str
     }
 
     User "1" --> "0..*" Pet : owns
     User "1" --> "0..*" Task : creates
     Task "0..*" --> "0..*" Pet : is for
-    Schedule "1" --> "0..*" Task : places
-    User "1" --> "1" Schedule : views
+    User "1" --> "0..2" Schedule : reviews candidates
+    User "1" --> "0..1" Schedule : saved_schedule
+    Schedule "0..*" ..> "0..*" Task : places
