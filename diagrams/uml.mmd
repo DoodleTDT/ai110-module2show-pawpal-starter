@@ -60,6 +60,7 @@ classDiagram
         +Date day
         +str strategy
         +bool is_saved
+        +list~Task~ tasks
         +dict~str, tuple~ placements
         +build(tasks, wake_time, sleep_time) None
         +place_task(task) bool
@@ -67,6 +68,11 @@ classDiagram
         +sort_by_strategy(tasks) list~Task~
         +placed_tasks() list~Task~
         +unplaced_tasks() list~Task~
+        +contains_task(task_id) bool
+        +get_task(task_id) Task
+        +get_placement(task_id) tuple
+        +tasks_at(moment) list~Task~
+        +tasks_in_window(start, end) list~Task~
         +summary() dict
         +explain() str
     }

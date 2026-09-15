@@ -110,6 +110,8 @@ class Schedule:
         self.day: date = day
         self.strategy: str = strategy
         self.is_saved: bool = False
+        # every task build() was given to consider, placed or not
+        self.tasks: list["Task"] = []
         # task_id -> (start_time, end_time) for every task that got placed
         self.placements: dict[str, tuple] = {}
 
@@ -138,6 +140,32 @@ class Schedule:
 
     def unplaced_tasks(self) -> list["Task"]:
         """Return the tasks that could not fit in the day."""
+        pass
+
+    def contains_task(self, task_id: str) -> bool:
+        """Return True if the given task actually got placed in this schedule.
+        Useful when comparing candidates: 'candidate A made room for the vet call,
+        candidate B did not.'"""
+        pass
+
+    def get_task(self, task_id: str) -> "Task | None":
+        """Look up one of this schedule's tasks by id, or return None if the task
+        was never considered for this day."""
+        pass
+
+    def get_placement(self, task_id: str) -> tuple | None:
+        """Return the (start, end) times this task was scheduled for, or None if it
+        was not placed."""
+        pass
+
+    def tasks_at(self, moment: time) -> list["Task"]:
+        """Return the tasks scheduled across the given moment -- the 'what am I
+        doing at 3pm?' view."""
+        pass
+
+    def tasks_in_window(self, start: time, end: time) -> list["Task"]:
+        """Return the placed tasks that overlap the given time window, for showing
+        one slice of the day (a morning block, an afternoon block)."""
         pass
 
     def summary(self) -> dict:
@@ -257,15 +285,6 @@ class User:
         chosen one yet. There is no history -- choosing again replaces this."""
         pass
 
-# Are there any possible missing relationships between the classes that could 
-# be addressed?
-# Yes, there are a few potential relationships between the classes that could 
-# be addressed to enhance the functionality and coherence of the system:
-
-# 2. **Schedule-Task Relationship**: The `Schedule` class could benefit from a 
-# more explicit relationship with the `Task` class. For instance, methods to 
-# retrieve tasks that are scheduled at specific times or to check if a particular 
-# task is included in the schedule could be useful.
 
 # 4. **Task Dependencies**: If certain tasks depend on the completion of others, 
 # it might be useful to establish a relationship between tasks to represent 
