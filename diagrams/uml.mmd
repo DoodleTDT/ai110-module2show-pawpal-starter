@@ -12,6 +12,10 @@ classDiagram
         +delete_task(task_id) None
         +set_priority(task_id, priority) None
         +set_time_preference(task_id, window, duration) None
+        +set_dependency(task_id, prerequisite_id) None
+        +clear_dependency(task_id, prerequisite_id) None
+        +dependencies_of(task_id) list~Task~
+        +creates_cycle(task_id, prerequisite_id) bool
         +add_event(title, start, end) None
         +get_pet(pet_id) Pet
         +tasks_for_pet(pet_id) list~Task~
@@ -45,11 +49,15 @@ classDiagram
         +Time preferred_end
         +bool is_fixed
         +list~Pet~ pets
+        +list~str~ depends_on
         +is_pet_task() bool
         +is_for_pet(pet_id) bool
         +add_pet(pet) None
         +remove_pet(pet_id) None
         +pet_names() list~str~
+        +add_dependency(task_id) None
+        +remove_dependency(task_id) None
+        +has_dependencies() bool
         +blocks(start, end) bool
         +describe() str
     }
@@ -66,6 +74,10 @@ classDiagram
         +place_task(task) bool
         +is_free(start, end) bool
         +sort_by_strategy(tasks) list~Task~
+        +sort_by_dependencies(tasks) list~Task~
+        +dependencies_met(task) bool
+        +earliest_start_for(task) Time
+        +blocked_tasks() list~Task~
         +placed_tasks() list~Task~
         +unplaced_tasks() list~Task~
         +contains_task(task_id) bool
@@ -80,6 +92,7 @@ classDiagram
     User "1" --> "0..*" Pet : owns
     User "1" --> "0..*" Task : creates
     Task "0..*" --> "0..*" Pet : is for
+    Task "0..*" --> "0..*" Task : depends on
     User "1" --> "0..2" Schedule : reviews candidates
     User "1" --> "0..1" Schedule : saved_schedule
     Schedule "0..*" ..> "0..*" Task : places

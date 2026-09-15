@@ -43,9 +43,10 @@ class Task:
         preferred_end: time | None = None,
         is_fixed: bool = False,
         pets: list["Pet"] | None = None,
+        depends_on: list[str] | None = None,
     ) -> None:
-        """Store the task's identity, cost in time, priority, time preference, and
-        which pets (if any) it belongs to."""
+        """Store the task's identity, cost in time, priority, time preference,
+        which pets (if any) it belongs to, and which tasks must happen first."""
         self.task_id: str = task_id
         self.title: str = title
         self.category: str = category
@@ -55,6 +56,9 @@ class Task:
         self.preferred_end: time | None = preferred_end
         self.is_fixed: bool = is_fixed
         self.pets: list["Pet"] = pets if pets is not None else []
+        # ids of tasks that must be placed before this one (e.g. "give medicine"
+        # after "feed breakfast"). Ids, not Task objects, so the links stay flat.
+        self.depends_on: list[str] = depends_on if depends_on is not None else []
 
     def is_pet_task(self) -> bool:
         """Return True if this task is for at least one pet, False if it is a
@@ -79,6 +83,21 @@ class Task:
     def pet_names(self) -> list[str]:
         """Return the names of the pets this task is for, used when describing or
         explaining the task."""
+        pass
+
+    def add_dependency(self, task_id: str) -> None:
+        """Record that the given task must happen before this one. Ignores a repeat
+        of a dependency that is already there."""
+        pass
+
+    def remove_dependency(self, task_id: str) -> None:
+        """Drop the given prerequisite, leaving this task's other dependencies in
+        place."""
+        pass
+
+    def has_dependencies(self) -> bool:
+        """Return True if this task is waiting on any other task, which means the
+        scheduler cannot place it freely."""
         pass
 
     def blocks(self, start: time, end: time) -> bool:
@@ -116,8 +135,9 @@ class Schedule:
         self.placements: dict[str, tuple] = {}
 
     def build(self, tasks: list["Task"], wake_time: time, sleep_time: time) -> None:
-        """Fill in this schedule: sort the tasks by strategy, then try to place each
-        one between wake_time and sleep_time."""
+        """Fill in this schedule: sort the tasks by strategy, reorder them so
+        prerequisites come first, then try to place each one between wake_time and
+        sleep_time."""
         pass
 
     def place_task(self, task: "Task") -> bool:
@@ -132,6 +152,29 @@ class Schedule:
     def sort_by_strategy(self, tasks: list["Task"]) -> list["Task"]:
         """Return the tasks reordered for this schedule's strategy (for example
         highest priority first, or shortest task first)."""
+        pass
+
+    def sort_by_dependencies(self, tasks: list["Task"]) -> list["Task"]:
+        """Return the tasks reordered so every prerequisite comes before the task
+        that needs it, keeping the strategy order among tasks that do not depend on
+        each other. build() runs this after sort_by_strategy."""
+        pass
+
+    def dependencies_met(self, task: "Task") -> bool:
+        """Return True if all of this task's prerequisites are already placed in
+        this schedule, so it is allowed to be placed now."""
+        pass
+
+    def earliest_start_for(self, task: "Task") -> time | None:
+        """Return the earliest time this task may start -- the end of its latest
+        prerequisite, or None if it has no prerequisites placed yet. place_task uses
+        this as the floor when it searches for a slot."""
+        pass
+
+    def blocked_tasks(self) -> list["Task"]:
+        """Return the tasks that could not be placed because a prerequisite was
+        never placed, as opposed to simply running out of room. explain() reports
+        these differently."""
         pass
 
     def placed_tasks(self) -> list["Task"]:
@@ -210,7 +253,10 @@ class User:
         pass
 
     def delete_task(self, task_id: str) -> None:
-        """Remove the task with the given id from this user's task list."""
+        """Remove the task with the given id from this user's task list, and also
+        drop it from every other task's depends_on list. Without that cleanup a
+        leftover id points at a task that no longer exists, and the dependent task
+        would wait on a prerequisite that can never be placed."""
         pass
 
     def set_priority(self, task_id: str, priority: int) -> None:
@@ -220,6 +266,28 @@ class User:
 
     def set_time_preference(self, task_id: str, window: tuple, duration: int) -> None:
         """Set a task's preferred time window and how long it should take."""
+        pass
+
+    def set_dependency(self, task_id: str, prerequisite_id: str) -> None:
+        """Say that one task must happen before another -- 'walk Mochi only after
+        breakfast'. The schedule then orders them that way instead of by strategy
+        alone. Refuses a dependency that would create a loop, since a loop would
+        leave both tasks permanently unplaceable."""
+        pass
+
+    def clear_dependency(self, task_id: str, prerequisite_id: str) -> None:
+        """Remove one prerequisite from a task, freeing the scheduler to place it
+        wherever the strategy prefers."""
+        pass
+
+    def dependencies_of(self, task_id: str) -> list["Task"]:
+        """Return the tasks that must happen before the given task, for showing the
+        user what a task is waiting on."""
+        pass
+
+    def creates_cycle(self, task_id: str, prerequisite_id: str) -> bool:
+        """Return True if adding this dependency would make a task depend on itself
+        through some chain. Checked by set_dependency before it commits."""
         pass
 
     def add_event(self, title: str, start: time, end: time) -> None:
