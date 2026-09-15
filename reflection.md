@@ -20,7 +20,9 @@ Schedule: Where the assistant stores the daily plan for the user to view. Should
 
 - Did your design change during implementation?
 - If yes, describe at least one change and why you made it.
+The original design did not consider dependencies to tasks (ex. Eating breakfast should come before washing the dog). I made the change for the user to be able to mark tasks as dependent on others. There are now methods so the schedule can read these dependencies and consider them for the daily schedule. The dependent tasks are now considered before the priority scale, and any deleted tasks will also delete any connected dependencies.
 
+Also added a method that stores the saved daily schedule, so the user can come back to the program and view it. No history outside of the daily schedule will be stored at this time.
 ---
 
 ## 2. Scheduling Logic and Tradeoffs
