@@ -13,6 +13,11 @@ classDiagram
         +set_priority(task_id, priority) None
         +set_time_preference(task_id, window, duration) None
         +add_event(title, start, end) None
+        +get_pet(pet_id) Pet
+        +tasks_for_pet(pet_id) list~Task~
+        +tasks_for_species(species) list~Task~
+        +tasks_by_pet() dict~str, list~Task~~
+        +personal_tasks() list~Task~
         +awake_window() tuple
         +request_schedule(strategy) Schedule
         +request_alternative(strategy) Schedule
@@ -40,6 +45,10 @@ classDiagram
         +bool is_fixed
         +list~Pet~ pets
         +is_pet_task() bool
+        +is_for_pet(pet_id) bool
+        +add_pet(pet) None
+        +remove_pet(pet_id) None
+        +pet_names() list~str~
         +blocks(start, end) bool
         +describe() str
     }

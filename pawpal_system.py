@@ -61,6 +61,26 @@ class Task:
         personal task or fixed event."""
         pass
 
+    def is_for_pet(self, pet_id: str) -> bool:
+        """Return True if the pet with the given id is one of this task's pets.
+        This is the single check the user-level pet lookups are built on."""
+        pass
+
+    def add_pet(self, pet: "Pet") -> None:
+        """Link another pet to this task, so one task (a shared walk, a vet trip)
+        can cover more than one animal."""
+        pass
+
+    def remove_pet(self, pet_id: str) -> None:
+        """Unlink the pet with the given id from this task, leaving the task's other
+        pets in place."""
+        pass
+
+    def pet_names(self) -> list[str]:
+        """Return the names of the pets this task is for, used when describing or
+        explaining the task."""
+        pass
+
     def blocks(self, start: time, end: time) -> bool:
         """Return True if this task is fixed and its time overlaps the given
         start/end window, meaning nothing else can be placed there."""
@@ -177,6 +197,31 @@ class User:
     def add_event(self, title: str, start: time, end: time) -> None:
         """Add a fixed commitment (work, class, an appointment) that the scheduler
         must plan around instead of move."""
+        pass
+
+    def get_pet(self, pet_id: str) -> "Pet | None":
+        """Look up one of this user's pets by id, or return None if there is no
+        such pet."""
+        pass
+
+    def tasks_for_pet(self, pet_id: str) -> list["Task"]:
+        """Return every task that is for the given pet -- the 'what does Mochi need
+        today?' view."""
+        pass
+
+    def tasks_for_species(self, species: str) -> list["Task"]:
+        """Return every task belonging to any pet of the given species, for a user
+        with more than one kind of animal."""
+        pass
+
+    def tasks_by_pet(self) -> dict[str, list["Task"]]:
+        """Group this user's pet tasks by pet id, so the whole day can be shown one
+        pet at a time. A task shared by two pets appears under both."""
+        pass
+
+    def personal_tasks(self) -> list["Task"]:
+        """Return the tasks that are not tied to any pet (the user's own errands and
+        fixed events), the complement of the pet tasks."""
         pass
 
     def awake_window(self) -> tuple:
