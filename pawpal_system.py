@@ -252,24 +252,20 @@ class User:
         """Drop the candidate schedules the user did not pick."""
         pass
 
+    def get_saved_schedule(self) -> "Schedule | None":
+        """Return the one schedule the user has saved, or None if they have not
+        chosen one yet. There is no history -- choosing again replaces this."""
+        pass
+
 # Are there any possible missing relationships between the classes that could 
 # be addressed?
 # Yes, there are a few potential relationships between the classes that could 
 # be addressed to enhance the functionality and coherence of the system:
 
-# 1. **Task-Pet Relationship**: While the `Task` class has a list of `Pet` 
-# objects, it might be beneficial to establish a more explicit relationship or 
-# method to manage tasks for specific pets. For example, methods to retrieve all 
-# tasks for a specific pet or to filter tasks based on pet species could be added.
-
 # 2. **Schedule-Task Relationship**: The `Schedule` class could benefit from a 
 # more explicit relationship with the `Task` class. For instance, methods to 
 # retrieve tasks that are scheduled at specific times or to check if a particular 
 # task is included in the schedule could be useful.
-
-# 3. **User-Schedule Relationship**: The `User` class manages candidate schedules, 
-# but it might be helpful to have methods that allow users to retrieve all their 
-# saved schedules or to compare multiple saved schedules over time.
 
 # 4. **Task Dependencies**: If certain tasks depend on the completion of others, 
 # it might be useful to establish a relationship between tasks to represent 
