@@ -63,52 +63,72 @@ class Task:
     def is_pet_task(self) -> bool:
         """Return True if this task is for at least one pet, False if it is a
         personal task or fixed event."""
-        pass
+        return len(self.pets) > 0
 
     def is_for_pet(self, pet_id: str) -> bool:
         """Return True if the pet with the given id is one of this task's pets.
         This is the single check the user-level pet lookups are built on."""
-        pass
+        for pet in self.pets:
+            if pet.pet_id == pet_id:
+                return True
+        return False
 
     def add_pet(self, pet: "Pet") -> None:
         """Link another pet to this task, so one task (a shared walk, a vet trip)
         can cover more than one animal."""
-        pass
+        # is_for_pet keeps the same pet from being linked twice
+        if not self.is_for_pet(pet.pet_id):
+            self.pets.append(pet)
 
     def remove_pet(self, pet_id: str) -> None:
         """Unlink the pet with the given id from this task, leaving the task's other
         pets in place."""
-        pass
+        self.pets = [pet for pet in self.pets if pet.pet_id != pet_id]
 
     def pet_names(self) -> list[str]:
         """Return the names of the pets this task is for, used when describing or
         explaining the task."""
-        pass
+        return [pet.name for pet in self.pets]
 
     def add_dependency(self, task_id: str) -> None:
         """Record that the given task must happen before this one. Ignores a repeat
         of a dependency that is already there."""
-        pass
+        if task_id not in self.depends_on:
+            self.depends_on.append(task_id)
 
     def remove_dependency(self, task_id: str) -> None:
         """Drop the given prerequisite, leaving this task's other dependencies in
         place."""
-        pass
+        if task_id in self.depends_on:
+            self.depends_on.remove(task_id)
 
     def has_dependencies(self) -> bool:
         """Return True if this task is waiting on any other task, which means the
         scheduler cannot place it freely."""
-        pass
+        return len(self.depends_on) > 0
 
     def blocks(self, start: time, end: time) -> bool:
         """Return True if this task is fixed and its time overlaps the given
         start/end window, meaning nothing else can be placed there."""
-        pass
+        if not self.is_fixed:
+            return False
+        # a fixed task without both times set has no window to defend
+        if self.preferred_start is None or self.preferred_end is None:
+            return False
+        # two windows overlap when each one starts before the other one ends
+        return self.preferred_start < end and start < self.preferred_end
 
     def describe(self) -> str:
         """Return a short human-readable line about this task, used when the
         schedule explains itself."""
-        pass
+        line = f"{self.title} ({self.category}, {self.duration_minutes} min, priority {self.priority})"
+        if self.is_pet_task():
+            line += " for " + ", ".join(self.pet_names())
+        if self.is_fixed:
+            line += " [fixed]"
+        if self.has_dependencies():
+            line += " after " + ", ".join(self.depends_on)
+        return line
 
 
 class Schedule:
