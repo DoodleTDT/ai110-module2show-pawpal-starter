@@ -21,6 +21,14 @@ def to_time(minutes: int) -> time:
     return time(hour=minutes // 60, minute=minutes % 60)
 
 
+def overlaps(start_a: time, end_a: time, start_b: time, end_b: time) -> bool:
+    """Return True if two time windows share any minute. Two windows that merely
+    touch -- one ending exactly when the other starts -- do not overlap, so a walk
+    ending at 09:00 and work starting at 09:00 both fit. Every conflict check in
+    the system goes through here so they all answer this the same way."""
+    return to_minutes(start_a) < to_minutes(end_b) and to_minutes(start_b) < to_minutes(end_a)
+
+
 class Pet:
     """A single animal the user cares for. Pure data: tasks reference pets so the
     schedule can say which pet each task is for."""
@@ -129,8 +137,7 @@ class Task:
         # a fixed task without both times set has no window to defend
         if self.preferred_start is None or self.preferred_end is None:
             return False
-        # two windows overlap when each one starts before the other one ends
-        return self.preferred_start < end and start < self.preferred_end
+        return overlaps(self.preferred_start, self.preferred_end, start, end)
 
     def describe(self) -> str:
         """Return a short human-readable line about this task, used when the
@@ -249,11 +256,8 @@ class Schedule:
 
     def is_free(self, start: time, end: time) -> bool:
         """Return True if no already-placed task overlaps the given window."""
-        new_start = to_minutes(start)
-        new_end = to_minutes(end)
         for placed_start, placed_end in self.placements.values():
-            # same overlap test as Task.blocks: touching edges do not count
-            if to_minutes(placed_start) < new_end and new_start < to_minutes(placed_end):
+            if overlaps(placed_start, placed_end, start, end):
                 return False
         return True
 
@@ -389,12 +393,10 @@ class Schedule:
     def tasks_in_window(self, start: time, end: time) -> list["Task"]:
         """Return the placed tasks that overlap the given time window, for showing
         one slice of the day (a morning block, an afternoon block)."""
-        window_start = to_minutes(start)
-        window_end = to_minutes(end)
         found = []
         for task in self.placed_tasks():
             task_start, task_end = self.placements[task.task_id]
-            if to_minutes(task_start) < window_end and window_start < to_minutes(task_end):
+            if overlaps(task_start, task_end, start, end):
                 found.append(task)
         return found
 
@@ -511,110 +513,274 @@ class User:
 
     def add_pet(self, pet: "Pet") -> None:
         """Add a pet to this user's list of pets."""
-        pass
+        # two pets sharing an id would make get_pet ambiguous
+        if self.get_pet(pet.pet_id) is not None:
+            raise ValueError(f"there is already a pet with id {pet.pet_id}")
+        self.pets.append(pet)
 
     def add_task(self, task: "Task") -> None:
         """Add a task to this user's list of tasks."""
-        pass
+        # Schedule.placements is keyed by task_id, so a duplicate id would let one
+        # task overwrite the other's slot. Better to refuse than to lose a task.
+        if self.get_task(task.task_id) is not None:
+            raise ValueError(f"there is already a task with id {task.task_id}")
+        self.tasks.append(task)
+
+    def get_task(self, task_id: str) -> "Task | None":
+        """Look up one of this user's tasks by id, or return None if there is no
+        such task. Every method that edits a task by id goes through here."""
+        for task in self.tasks:
+            if task.task_id == task_id:
+                return task
+        return None
 
     def delete_task(self, task_id: str) -> None:
         """Remove the task with the given id from this user's task list, and also
         drop it from every other task's depends_on list. Without that cleanup a
         leftover id points at a task that no longer exists, and the dependent task
         would wait on a prerequisite that can never be placed."""
-        pass
+        self.tasks = [task for task in self.tasks if task.task_id != task_id]
+        for task in self.tasks:
+            task.remove_dependency(task_id)
 
     def set_priority(self, task_id: str, priority: int) -> None:
         """Change how important a task is, which affects where it lands in a
         schedule."""
-        pass
+        task = self.get_task(task_id)
+        if task is not None:
+            task.priority = priority
 
     def set_time_preference(self, task_id: str, window: tuple, duration: int) -> None:
         """Set a task's preferred time window and how long it should take."""
-        pass
+        task = self.get_task(task_id)
+        if task is None:
+            return
+        task.preferred_start, task.preferred_end = window
+        task.duration_minutes = duration
 
     def set_dependency(self, task_id: str, prerequisite_id: str) -> None:
         """Say that one task must happen before another -- 'walk Mochi only after
         breakfast'. The schedule then orders them that way instead of by strategy
         alone. Refuses a dependency that would create a loop, since a loop would
         leave both tasks permanently unplaceable."""
-        pass
+        task = self.get_task(task_id)
+        if task is None or self.get_task(prerequisite_id) is None:
+            return
+        if self.creates_cycle(task_id, prerequisite_id):
+            # raising instead of ignoring, so the user finds out why the link they
+            # asked for did not appear
+            raise ValueError(
+                f"{prerequisite_id} cannot come before {task_id}: that would be a loop"
+            )
+        task.add_dependency(prerequisite_id)
 
     def clear_dependency(self, task_id: str, prerequisite_id: str) -> None:
         """Remove one prerequisite from a task, freeing the scheduler to place it
         wherever the strategy prefers."""
-        pass
+        task = self.get_task(task_id)
+        if task is not None:
+            task.remove_dependency(prerequisite_id)
 
     def dependencies_of(self, task_id: str) -> list["Task"]:
         """Return the tasks that must happen before the given task, for showing the
         user what a task is waiting on."""
-        pass
+        task = self.get_task(task_id)
+        if task is None:
+            return []
+        found = []
+        for prerequisite_id in task.depends_on:
+            prerequisite = self.get_task(prerequisite_id)
+            if prerequisite is not None:
+                found.append(prerequisite)
+        return found
 
     def creates_cycle(self, task_id: str, prerequisite_id: str) -> bool:
         """Return True if adding this dependency would make a task depend on itself
         through some chain. Checked by set_dependency before it commits."""
-        pass
+        # a task that has to come before itself is the smallest possible loop
+        if task_id == prerequisite_id:
+            return True
+
+        # Walk back through everything the prerequisite is itself waiting on. If
+        # that chain reaches task_id, then task_id already comes first, and adding
+        # this link would close the circle.
+        seen: set[str] = set()
+        to_check = [prerequisite_id]
+        while to_check:
+            current_id = to_check.pop()
+            if current_id == task_id:
+                return True
+            if current_id in seen:
+                continue
+            seen.add(current_id)
+            current = self.get_task(current_id)
+            if current is not None:
+                to_check.extend(current.depends_on)
+        return False
 
     def add_event(self, title: str, start: time, end: time) -> None:
         """Add a fixed commitment (work, class, an appointment) that the scheduler
         must plan around instead of move."""
-        pass
+        # skip over any id already taken, so deleting an event does not cause the
+        # next one to collide with a name still in use
+        number = len(self.tasks) + 1
+        while self.get_task(f"event_{number}") is not None:
+            number += 1
+
+        self.add_task(
+            Task(
+                task_id=f"event_{number}",
+                title=title,
+                category="event",
+                priority=5,
+                duration_minutes=to_minutes(end) - to_minutes(start),
+                preferred_start=start,
+                preferred_end=end,
+                is_fixed=True,
+            )
+        )
 
     def get_pet(self, pet_id: str) -> "Pet | None":
         """Look up one of this user's pets by id, or return None if there is no
         such pet."""
-        pass
+        for pet in self.pets:
+            if pet.pet_id == pet_id:
+                return pet
+        return None
 
     def tasks_for_pet(self, pet_id: str) -> list["Task"]:
         """Return every task that is for the given pet -- the 'what does Mochi need
         today?' view."""
-        pass
+        return [task for task in self.tasks if task.is_for_pet(pet_id)]
 
     def tasks_for_species(self, species: str) -> list["Task"]:
         """Return every task belonging to any pet of the given species, for a user
         with more than one kind of animal."""
-        pass
+        pet_ids = [pet.pet_id for pet in self.pets if pet.species == species]
+        found = []
+        for task in self.tasks:
+            # a task shared by two cats should still be listed once
+            for pet_id in pet_ids:
+                if task.is_for_pet(pet_id):
+                    found.append(task)
+                    break
+        return found
 
     def tasks_by_pet(self) -> dict[str, list["Task"]]:
         """Group this user's pet tasks by pet id, so the whole day can be shown one
         pet at a time. A task shared by two pets appears under both."""
-        pass
+        # every pet gets a key, so a pet with nothing to do shows an empty day
+        # rather than disappearing from the view
+        return {pet.pet_id: self.tasks_for_pet(pet.pet_id) for pet in self.pets}
 
     def personal_tasks(self) -> list["Task"]:
         """Return the tasks that are not tied to any pet (the user's own errands and
         fixed events), the complement of the pet tasks."""
-        pass
+        return [task for task in self.tasks if not task.is_pet_task()]
 
     def awake_window(self) -> tuple:
         """Return the (wake_time, sleep_time) pair the scheduler is allowed to use."""
-        pass
+        return (self.wake_time, self.sleep_time)
 
     def request_schedule(self, strategy: str) -> "Schedule":
         """Build a first candidate schedule from this user's tasks using the given
         strategy, store it in candidates, and return it."""
-        pass
+        # asking for a first plan again starts the comparison over
+        self.candidates = []
+        return self._build_candidate(strategy, "plan-a", "Plan A")
 
     def request_alternative(self, strategy: str) -> "Schedule":
         """Build a second candidate schedule using a different strategy so the user
         has something to compare against."""
-        pass
+        if not self.candidates:
+            # nothing to be an alternative to yet
+            return self.request_schedule(strategy)
+        # there are only ever two candidates: a new alternative replaces the old one
+        self.candidates = self.candidates[:1]
+        return self._build_candidate(strategy, "plan-b", "Plan B")
+
+    def _build_candidate(self, strategy: str, schedule_id: str, label: str) -> "Schedule":
+        """Make one candidate schedule over this user's tasks and awake window, keep
+        it in candidates, and return it. Shared by request_schedule and
+        request_alternative, which differ only in which slot they fill."""
+        wake_time, sleep_time = self.awake_window()
+        schedule = Schedule(
+            schedule_id=schedule_id,
+            label=f"{label} ({strategy})",
+            day=date.today(),
+            strategy=strategy,
+        )
+        schedule.build(self.tasks, wake_time, sleep_time)
+        self.candidates.append(schedule)
+        return schedule
 
     def compare_candidates(self) -> str:
         """Return a side-by-side explanation of the candidate schedules so the user
         can decide between them."""
-        pass
+        if not self.candidates:
+            return "No plans yet -- ask for a schedule first."
+        if len(self.candidates) == 1:
+            return (
+                self.candidates[0].explain()
+                + "\n\nAsk for an alternative to have something to compare this to."
+            )
+
+        first, second = self.candidates[0], self.candidates[1]
+        lines = [first.explain(), "", "=" * 60, "", second.explain(), "", "=" * 60, ""]
+
+        # the numbers alone rarely decide it; what settles the choice is which
+        # tasks one plan made room for and the other did not
+        only_first = [
+            task.title
+            for task in first.placed_tasks()
+            if not second.contains_task(task.task_id)
+        ]
+        only_second = [
+            task.title
+            for task in second.placed_tasks()
+            if not first.contains_task(task.task_id)
+        ]
+
+        lines.append("Choosing between them:")
+        if only_first:
+            lines.append(f"  Only {first.label} fits: {', '.join(only_first)}")
+        if only_second:
+            lines.append(f"  Only {second.label} fits: {', '.join(only_second)}")
+        if not only_first and not only_second:
+            lines.append("  Both plans fit the same tasks -- only the order differs.")
+
+        for schedule in (first, second):
+            numbers = schedule.summary()
+            lines.append(
+                f"  {schedule.label}: {numbers['tasks_placed']} placed, "
+                f"{numbers['tasks_dropped']} left out, "
+                f"{numbers['minutes_free']} minutes free"
+            )
+        return "\n".join(lines)
 
     def choose_schedule(self, schedule_id: str) -> "Schedule":
         """Mark the chosen candidate as saved, set it as saved_schedule, and return
         it."""
-        pass
+        for schedule in self.candidates:
+            if schedule.schedule_id == schedule_id:
+                # there is no history, so the plan being replaced stops being saved
+                if self.saved_schedule is not None:
+                    self.saved_schedule.is_saved = False
+                schedule.is_saved = True
+                self.saved_schedule = schedule
+                return schedule
+        raise ValueError(f"{schedule_id} is not one of the plans on offer")
 
     def discard_unchosen(self, schedule_id: str) -> None:
         """Drop the candidate schedules the user did not pick."""
-        pass
+        self.candidates = [
+            schedule
+            for schedule in self.candidates
+            if schedule.schedule_id == schedule_id
+        ]
 
     def get_saved_schedule(self) -> "Schedule | None":
         """Return the one schedule the user has saved, or None if they have not
         chosen one yet. There is no history -- choosing again replaces this."""
-        pass
+        return self.saved_schedule
 

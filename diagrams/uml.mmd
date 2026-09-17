@@ -9,6 +9,7 @@ classDiagram
         +Schedule saved_schedule
         +add_pet(pet) None
         +add_task(task) None
+        +get_task(task_id) Task
         +delete_task(task_id) None
         +set_priority(task_id, priority) None
         +set_time_preference(task_id, window, duration) None
@@ -25,6 +26,7 @@ classDiagram
         +awake_window() tuple
         +request_schedule(strategy) Schedule
         +request_alternative(strategy) Schedule
+        -_build_candidate(strategy, schedule_id, label) Schedule
         +compare_candidates() str
         +choose_schedule(schedule_id) Schedule
         +discard_unchosen(schedule_id) None
@@ -97,6 +99,7 @@ classDiagram
         +int SEARCH_STEP
         +to_minutes(moment) int
         +to_time(minutes) Time
+        +overlaps(start_a, end_a, start_b, end_b) bool
     }
 
     User "1" --> "0..*" Pet : owns
@@ -106,4 +109,7 @@ classDiagram
     User "1" --> "0..2" Schedule : reviews candidates
     User "1" --> "0..1" Schedule : saved_schedule
     Schedule "0..*" ..> "0..*" Task : places
+    User ..> Schedule : builds candidates
     Schedule ..> TimeHelpers : compares times with
+    Task ..> TimeHelpers : compares times with
+    User ..> TimeHelpers : sizes events with
