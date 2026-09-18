@@ -511,12 +511,30 @@ class User:
         self.candidates: list["Schedule"] = []
         self.saved_schedule: "Schedule | None" = None
 
-    def add_pet(self, pet: "Pet") -> None:
-        """Add a pet to this user's list of pets."""
+    def add_pet(
+        self,
+        pet_id: str,
+        name: str,
+        species: str,
+        age: int,
+        notes: str = "",
+    ) -> "Pet":
+        """Build a pet from its profile details and add it to this user's list of
+        pets. Takes the same five fields Pet does, so the caller never has to make
+        the Pet itself, and hands the new pet back for tasks to reference."""
         # two pets sharing an id would make get_pet ambiguous
-        if self.get_pet(pet.pet_id) is not None:
-            raise ValueError(f"there is already a pet with id {pet.pet_id}")
+        if self.get_pet(pet_id) is not None:
+            raise ValueError(f"there is already a pet with id {pet_id}")
+
+        pet = Pet(
+            pet_id=pet_id,
+            name=name,
+            species=species,
+            age=age,
+            notes=notes,
+        )
         self.pets.append(pet)
+        return pet
 
     def add_task(self, task: "Task") -> None:
         """Add a task to this user's list of tasks."""
