@@ -47,11 +47,29 @@ pip install -r requirements.txt
 Paste a sample of your app's CLI or Streamlit output here so a reader can see what a generated plan looks like:
 
 ```
-# e.g.:
-# Daily plan for Biscuit (Golden Retriever):
-#   08:00 — Morning walk (30 min) [priority: high]
-#   09:00 — Feeding (10 min) [priority: high]
-#   ...
+Building the PawPal System...
+Plan A (priority) (2026-09-17) -- sorted by priority
+6 of 6 tasks placed, 165 minutes booked, 615 minutes free.
+
+Planned:
+  07:00-08:00  Take Buddy for a walk (exercise, 60 min, priority 4) for Buddy -- no time preference, placed by priority
+  08:00-08:10  Clean Whiskers' litter box (cleaning, 10 min, priority 3) for Whiskers -- no time preference, placed by priority
+  08:10-09:05  Buy pet food (errand, 55 min, priority 2) -- no time preference, placed by priority
+  10:00-10:10  Schedule vet appointment for Buddy (errand, 10 min, priority 4) -- got the time you asked for
+  12:00-12:15  Feed Buddy (feeding, 15 min, priority 5) for Buddy -- got the time you asked for
+  13:00-13:15  Feed Whiskers (feeding, 15 min, priority 5) for Whiskers -- got the time you asked for
+
+Building an alternative plan...
+Plan B (shortest) (2026-09-17) -- sorted by shortest
+6 of 6 tasks placed, 165 minutes booked, 615 minutes free.
+
+Planned:
+  07:00-07:10  Clean Whiskers' litter box (cleaning, 10 min, priority 3) for Whiskers -- no time preference, placed by shortest
+  07:10-08:05  Buy pet food (errand, 55 min, priority 2) -- no time preference, placed by shortest
+  08:05-09:05  Take Buddy for a walk (exercise, 60 min, priority 4) for Buddy -- no time preference, placed by shortest
+  10:00-10:10  Schedule vet appointment for Buddy (errand, 10 min, priority 4) -- got the time you asked for
+  12:00-12:15  Feed Buddy (feeding, 15 min, priority 5) for Buddy -- got the time you asked for
+  13:00-13:15  Feed Whiskers (feeding, 15 min, priority 5) for Whiskers -- got the time you asked for
 ```
 
 ## 🧪 Testing PawPal+
