@@ -536,7 +536,8 @@ class TestBuildAndViews:
     def test_get_task_finds_a_considered_task(self):
         schedule = make_schedule()
         schedule.build([make_task("walk")], time(7, 0), time(20, 0))
-        assert schedule.get_task("walk").task_id == "walk"
+        found = schedule.get_task("walk")
+        assert found is not None and found.task_id == "walk"
 
     def test_get_task_returns_none_for_a_task_never_considered(self):
         schedule = make_schedule()
@@ -789,7 +790,8 @@ class TestUserTasks:
 
     def test_add_task_stores_the_task(self, owner):
         owner.add_task(make_task("walk"))
-        assert owner.get_task("walk").task_id == "walk"
+        found = owner.get_task("walk")
+        assert found is not None and found.task_id == "walk"
 
     def test_a_duplicate_task_id_is_refused(self, owner):
         # "a duplicate id would let one task overwrite the other's slot"
@@ -812,12 +814,14 @@ class TestUserTasks:
         owner.add_task(make_task("medicine"))
         owner.set_dependency("medicine", "breakfast")
         owner.delete_task("breakfast")
-        assert owner.get_task("medicine").depends_on == []
+        medicine = owner.get_task("medicine")
+        assert medicine is not None and medicine.depends_on == []
 
     def test_set_priority_changes_how_important_a_task_is(self, owner):
         owner.add_task(make_task("walk", priority=1))
         owner.set_priority("walk", 5)
-        assert owner.get_task("walk").priority == 5
+        walk = owner.get_task("walk")
+        assert walk is not None and walk.priority == 5
 
     def test_set_priority_on_an_unknown_task_is_harmless(self, owner):
         owner.set_priority("nope", 5)  # must not raise
@@ -849,12 +853,14 @@ class TestUserDependencies:
 
     def test_set_dependency_links_two_tasks(self, chain):
         chain.set_dependency("medicine", "breakfast")
-        assert chain.get_task("medicine").depends_on == ["breakfast"]
+        medicine = chain.get_task("medicine")
+        assert medicine is not None and medicine.depends_on == ["breakfast"]
 
     def test_set_dependency_ignores_an_unknown_task(self, chain):
         chain.set_dependency("nope", "breakfast")
         chain.set_dependency("medicine", "nope")
-        assert chain.get_task("medicine").depends_on == []
+        medicine = chain.get_task("medicine")
+        assert medicine is not None and medicine.depends_on == []
 
     def test_a_task_cannot_come_before_itself(self, chain):
         # "a task that has to come before itself is the smallest possible loop"
@@ -877,7 +883,8 @@ class TestUserDependencies:
         chain.set_dependency("medicine", "breakfast")
         with pytest.raises(ValueError):
             chain.set_dependency("breakfast", "medicine")
-        assert chain.get_task("breakfast").depends_on == []
+        breakfast = chain.get_task("breakfast")
+        assert breakfast is not None and breakfast.depends_on == []
 
     def test_creates_cycle_says_no_for_an_unrelated_pair(self, chain):
         assert chain.creates_cycle("walk", "breakfast") is False
@@ -885,7 +892,8 @@ class TestUserDependencies:
     def test_clear_dependency_frees_the_scheduler(self, chain):
         chain.set_dependency("medicine", "breakfast")
         chain.clear_dependency("medicine", "breakfast")
-        assert chain.get_task("medicine").has_dependencies() is False
+        medicine = chain.get_task("medicine")
+        assert medicine is not None and medicine.has_dependencies() is False
 
     def test_clear_dependency_on_an_unknown_task_is_harmless(self, chain):
         chain.clear_dependency("nope", "breakfast")
@@ -929,8 +937,9 @@ class TestUserEvents:
         owner.add_event("Class", time(18, 0), time(19, 0))
         owner.delete_task("event_1")
         owner.add_event("Gym", time(7, 30), time(8, 30))
-        assert owner.get_task("event_2").title == "Class"
-        assert owner.get_task("event_3").title == "Gym"
+        second, third = owner.get_task("event_2"), owner.get_task("event_3")
+        assert second is not None and second.title == "Class"
+        assert third is not None and third.title == "Gym"
 
     def test_an_event_is_not_a_pet_task(self, owner):
         owner.add_event("Work", time(9, 0), time(17, 0))
@@ -1092,9 +1101,10 @@ class TestWholeDay:
 
     def test_medicine_lands_after_breakfast(self, day):
         plan = day.request_schedule("priority")
-        breakfast_end = plan.get_placement("breakfast")[1]
-        medicine_start = plan.get_placement("medicine")[0]
-        assert to_minutes(medicine_start) >= to_minutes(breakfast_end)
+        breakfast = plan.get_placement("breakfast")
+        medicine = plan.get_placement("medicine")
+        assert breakfast is not None and medicine is not None
+        assert to_minutes(medicine[0]) >= to_minutes(breakfast[1])
 
     def test_nothing_is_scheduled_during_work(self, day):
         plan = day.request_schedule("priority")
