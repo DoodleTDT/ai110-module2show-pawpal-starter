@@ -123,6 +123,14 @@ def clock(moment: "time | None") -> str:
     return moment.strftime("%H:%M") if moment is not None else "--"
 
 
+def time_field(label: str, value: time, key: str | None = None) -> time:
+    """Draw a time widget and hand back the time it holds. st.time_input is typed as
+    though it might return nothing, which it only does when it is given no starting
+    value -- every widget in this app is given one, so the fallback never runs."""
+    chosen = st.time_input(label, value=value, step=STEP, key=key)
+    return chosen if chosen is not None else value
+
+
 def window_label(start: "time | None", end: "time | None") -> str:
     """Describe a task's time preference in one cell: a window, an 'at or after'
     time, or nothing asked for."""
@@ -201,6 +209,13 @@ def task_label(owner: "User", task_id: str) -> str:
     return f"{task_id} -- {task.title}" if task is not None else task_id
 
 
+def pet_label(owner: "User", pet_id: str) -> str:
+    """Label a pet in a dropdown by name. Falls back to the bare id for a pet that
+    has since been deleted, the same way task_label does."""
+    pet = owner.get_pet(pet_id)
+    return pet.name if pet is not None else pet_id
+
+
 def pick_task_id(
     owner: "User", label: str, key: str, tasks: list | None = None
 ) -> "str | None":
@@ -228,7 +243,7 @@ def pick_pet_id(owner: "User", label: str, key: str) -> "str | None":
     return st.selectbox(
         label,
         [pet.pet_id for pet in owner.pets],
-        format_func=lambda pet_id: owner.get_pet(pet_id).name,
+        format_func=lambda pet_id: pet_label(owner, pet_id),
         key=key,
     )
 
@@ -253,12 +268,8 @@ with st.sidebar:
 
     st.subheader("Awake window")
     st.caption("The scheduler only places tasks between these two times.")
-    owner.wake_time = st.time_input(
-        "Wake time", value=owner.wake_time, step=STEP, key="wake_time"
-    )
-    owner.sleep_time = st.time_input(
-        "Sleep time", value=owner.sleep_time, step=STEP, key="sleep_time"
-    )
+    owner.wake_time = time_field("Wake time", owner.wake_time, "wake_time")
+    owner.sleep_time = time_field("Sleep time", owner.sleep_time, "sleep_time")
 
     # the same pair the scheduler will be handed, read back through the accessor
     wake_time, sleep_time = owner.awake_window()
@@ -326,8 +337,9 @@ with pets_tab:
         if owner.pets:
             # tasks_by_pet gives every pet a key, so a pet with nothing to do shows
             # an empty day instead of vanishing from this view
-            for owned_id, pet_tasks in owner.tasks_by_pet().items():
-                pet = owner.get_pet(owned_id)
+            tasks_by_pet = owner.tasks_by_pet()
+            for pet in owner.pets:
+                pet_tasks = tasks_by_pet[pet.pet_id]
                 with st.expander(f"{pet.name} ({pet.species}) -- {len(pet_tasks)} tasks"):
                     table(task_rows(pet_tasks), f"Nothing scheduled for {pet.name} yet.")
         else:
@@ -375,15 +387,15 @@ with tasks_tab:
             pet_choices = st.multiselect(
                 "For which pets?",
                 [pet.pet_id for pet in owner.pets],
-                format_func=lambda pet_id: owner.get_pet(pet_id).name,
+                format_func=lambda pet_id: pet_label(owner, pet_id),
                 help="Leave empty for one of your own tasks.",
             )
 
             st.markdown("Time preference")
             wants_window = st.checkbox("This should happen at a particular time")
-            pref_start = st.time_input("Preferred start", value=time(8, 0), step=STEP)
+            pref_start = time_field("Preferred start", time(8, 0))
             use_end = st.checkbox("Also cap how late it can run", value=False)
-            pref_end = st.time_input("Latest end", value=time(9, 0), step=STEP)
+            pref_end = time_field("Latest end", time(9, 0))
             is_fixed = st.checkbox(
                 "Fixed -- cannot be moved",
                 help="A fixed task goes exactly where you pin it or not at all.",
@@ -397,7 +409,11 @@ with tasks_tab:
                 elif is_fixed and start is None:
                     # place_task has nowhere to pin a fixed task without a start
                     flash("err", "A fixed task needs a preferred start time.")
-                elif end is not None and to_minutes(end) <= to_minutes(start):
+                elif (
+                    start is not None
+                    and end is not None
+                    and to_minutes(end) <= to_minutes(start)
+                ):
                     flash("err", "The latest end has to come after the preferred start.")
                 else:
                     try:
@@ -413,7 +429,13 @@ with tasks_tab:
                                 is_fixed=is_fixed,
                                 # the real Pet objects, looked back up from the ids
                                 # the dropdown works in
-                                pets=[owner.get_pet(pet_id) for pet_id in pet_choices],
+                                pets=[
+                                    pet
+                                    for pet in (
+                                        owner.get_pet(pet_id) for pet_id in pet_choices
+                                    )
+                                    if pet is not None
+                                ],
                             )
                         )
                         flash("ok", f"Added {title.strip()}.")
@@ -430,8 +452,8 @@ with tasks_tab:
         )
         with st.form("add_event", clear_on_submit=True):
             event_title = st.text_input("What is it?", placeholder="Work")
-            event_start = st.time_input("Starts", value=time(9, 0), step=STEP)
-            event_end = st.time_input("Ends", value=time(17, 0), step=STEP)
+            event_start = time_field("Starts", time(9, 0))
+            event_end = time_field("Ends", time(17, 0))
             if st.form_submit_button("Add commitment"):
                 if not event_title.strip():
                     flash("err", "A commitment needs a name.")
@@ -475,17 +497,15 @@ with tasks_tab:
                 value=edit_task.preferred_start is not None,
                 key=f"edit_keep_window_{suffix}",
             )
-            edit_start = st.time_input(
+            edit_start = time_field(
                 "Preferred start",
-                value=edit_task.preferred_start or time(8, 0),
-                step=STEP,
-                key=f"edit_start_{suffix}",
+                edit_task.preferred_start or time(8, 0),
+                f"edit_start_{suffix}",
             )
-            edit_end = st.time_input(
+            edit_end = time_field(
                 "Latest end",
-                value=edit_task.preferred_end or time(9, 0),
-                step=STEP,
-                key=f"edit_end_{suffix}",
+                edit_task.preferred_end or time(9, 0),
+                f"edit_end_{suffix}",
             )
             cap_end = st.checkbox(
                 "Use that latest end",
@@ -504,8 +524,8 @@ with tasks_tab:
                 st.rerun()
 
             link_pet_id = pick_pet_id(owner, "Pet to link or unlink", "link_pet")
-            if link_pet_id is not None:
-                link_pet = owner.get_pet(link_pet_id)
+            link_pet = owner.get_pet(link_pet_id) if link_pet_id is not None else None
+            if link_pet is not None:
                 link_col, unlink_col = st.columns(2)
                 if link_col.button("Link pet", width="stretch"):
                     # one walk or vet trip can cover more than one animal
@@ -543,7 +563,7 @@ with deps_tab:
         with pick_col:
             st.markdown("**Add a rule**")
             later_id = pick_task_id(owner, "This task", "dep_later")
-            later = owner.get_task(later_id)
+            later = owner.get_task(later_id) if later_id is not None else None
             earlier_id = pick_task_id(
                 owner,
                 "...comes after this one",
@@ -711,23 +731,22 @@ with day_tab:
 
         with moment_col:
             st.markdown("**What am I doing at...**")
-            moment = st.time_input("Time", value=time(12, 0), step=STEP, key="at_moment")
+            moment = time_field("Time", time(12, 0), "at_moment")
             now_tasks = schedule.tasks_at(moment)
             if now_tasks:
                 for task in now_tasks:
-                    start, end = schedule.get_placement(task.task_id)
-                    st.write(f"**{clock(start)}-{clock(end)}** {task.describe()}")
+                    # tasks_at only returns placed tasks, so this always finds one
+                    placement = schedule.get_placement(task.task_id)
+                    if placement is not None:
+                        start, end = placement
+                        st.write(f"**{clock(start)}-{clock(end)}** {task.describe()}")
             else:
                 st.caption(f"Nothing planned at {clock(moment)}.")
 
         with window_col:
             st.markdown("**One slice of the day**")
-            slice_start = st.time_input(
-                "From", value=owner.awake_window()[0], step=STEP, key="slice_start"
-            )
-            slice_end = st.time_input(
-                "To", value=time(12, 0), step=STEP, key="slice_end"
-            )
+            slice_start = time_field("From", owner.awake_window()[0], "slice_start")
+            slice_end = time_field("To", time(12, 0), "slice_end")
             if to_minutes(slice_end) <= to_minutes(slice_start):
                 st.caption("Pick an end time after the start time.")
             else:
@@ -757,8 +776,11 @@ with day_tab:
         if looked_up_id is not None:
             looked_up = schedule.get_task(looked_up_id) or owner.get_task(looked_up_id)
         if looked_up is not None:
-            if schedule.contains_task(looked_up.task_id):
-                start, end = schedule.get_placement(looked_up.task_id)
+            # a placement is the same answer contains_task gives, with the times
+            # attached, so one lookup covers both the test and the message
+            placement = schedule.get_placement(looked_up.task_id)
+            if placement is not None:
+                start, end = placement
                 st.success(f"{looked_up.title}: {clock(start)}-{clock(end)}")
             elif schedule.get_task(looked_up.task_id) is None:
                 st.warning(f"{looked_up.title} was not part of this plan.")
