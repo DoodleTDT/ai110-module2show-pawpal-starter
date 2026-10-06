@@ -42,6 +42,18 @@ owner.add_task(
         pets=[pet1],
     )
 )
+#Create one more task that's before the last task
+owner.add_task(
+    Task(
+        task_id="task_1.5",
+        title="Play fetch with Buddy",
+        category="playtime",
+        priority=3,
+        duration_minutes=30,
+        preferred_start=time(11, 0),
+        pets=[pet1],
+    )
+)
 owner.add_task(
     Task(
         task_id="task_3",
@@ -90,6 +102,7 @@ owner.add_task(
         duration_minutes=55,
     )
 )
+
 
 # Display the tasks for the owner
 print("\nTasks for Owner:")
