@@ -38,7 +38,7 @@ owner.add_task(
         category="feeding",
         priority=5,
         duration_minutes=15,
-        preferred_start=time(12, 0),
+        preferred_start=time(13, 0),
         pets=[pet1],
     )
 )
