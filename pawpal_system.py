@@ -532,11 +532,17 @@ class Schedule:
         """Return the one-line 'why here' note explain() prints beside a task."""
         if task.is_fixed:
             return "fixed commitment, everything else worked around it"
-        after = self.earliest_start_for(task)
-        if after is not None:
-            return f"could not start before {after.strftime('%H:%M')}, when what it depends on ends"
+        # getting the asked-for time is the whole story, even for a task with
+        # prerequisites -- they ended in time and did not move it
         if task.preferred_start is not None and start == task.preferred_start:
             return "got the time you asked for"
+        # a prerequisite only explains the start if it ended later than the task
+        # would otherwise have begun: its preferred time, or else waking up
+        after = self.earliest_start_for(task)
+        if after is not None:
+            wanted = task.preferred_start or self.wake_time
+            if wanted is None or to_minutes(after) > to_minutes(wanted):
+                return f"could not start before {after.strftime('%H:%M')}, when what it depends on ends"
         if task.preferred_start is not None:
             return f"asked for {task.preferred_start.strftime('%H:%M')}, that window was full"
         return f"no time preference, placed by {self.strategy}"

@@ -738,6 +738,41 @@ class TestSummaryAndExplain:
         schedule.build([breakfast, medicine], time(7, 0), time(20, 0))
         assert "could not start before 09:00" in schedule.explain()
 
+    def test_explain_points_at_a_prerequisite_that_ran_past_the_preferred_time(self):
+        schedule = make_schedule()
+        breakfast = make_task("breakfast", is_fixed=True, duration_minutes=60,
+                              preferred_start=time(8, 0), preferred_end=time(9, 0))
+        medicine = make_task("medicine", duration_minutes=15, depends_on=["breakfast"],
+                             preferred_start=time(8, 30))
+        schedule.build([breakfast, medicine], time(7, 0), time(20, 0))
+        assert "could not start before 09:00" in schedule.explain()
+
+    def test_a_task_with_a_prerequisite_that_got_its_time_says_so(self):
+        # the walk ends at 08:00, long before the 10:00 bath, so the walk did not
+        # decide where the bath went
+        schedule = make_schedule()
+        walk = make_task("walk", is_fixed=True, duration_minutes=60,
+                         preferred_start=time(7, 0), preferred_end=time(8, 0))
+        bath = make_task("bath", title="Bath", duration_minutes=30,
+                         depends_on=["walk"], preferred_start=time(10, 0))
+        schedule.build([walk, bath], time(7, 0), time(20, 0))
+        text = schedule.explain()
+        assert "Bath (chore, 30 min, priority 3) after walk -- got the time you asked for" in text
+        assert "could not start before" not in text
+
+    def test_a_full_window_is_blamed_on_the_window_not_an_early_prerequisite(self):
+        schedule = make_schedule()
+        walk = make_task("walk", is_fixed=True, duration_minutes=60,
+                         preferred_start=time(7, 0), preferred_end=time(8, 0))
+        blocker = make_task("blocker", is_fixed=True, duration_minutes=30,
+                            preferred_start=time(10, 0), preferred_end=time(10, 30))
+        bath = make_task("bath", duration_minutes=30, depends_on=["walk"],
+                         preferred_start=time(10, 0))
+        schedule.build([walk, blocker, bath], time(7, 0), time(20, 0))
+        text = schedule.explain()
+        assert "asked for 10:00, that window was full" in text
+        assert "could not start before" not in text
+
     def test_explain_falls_back_to_the_strategy_for_an_untimed_task(self):
         schedule = make_schedule("priority")
         schedule.build([make_task("walk", duration_minutes=30)], time(7, 0), time(20, 0))
