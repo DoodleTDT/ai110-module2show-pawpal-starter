@@ -47,6 +47,12 @@ def make_schedule(strategy="priority"):
     )
 
 
+# fixed dates, so tests that plan a day never depend on what day they are run on
+MONDAY = date(2026, 10, 5)
+SATURDAY = date(2026, 10, 10)
+WEEKDAYS = {0, 1, 2, 3, 4}
+
+
 @pytest.fixture
 def owner():
     """A user awake 07:00-20:00 with one dog and one cat."""
@@ -346,7 +352,7 @@ class TestSortByDependencies:
         assert [task.task_id for task in ordered] == ["a", "b", "c"]
 
     def test_a_prerequisite_outside_this_day_does_not_hold_a_task_back(self):
-        # "A prerequisite that is not part of this day at all is handled later"
+        # "A prerequisite that is not part of this day at all does not apply today"
         schedule = make_schedule()
         orphan = make_task("orphan", depends_on=["not_today"])
         ordered = schedule.sort_by_dependencies([orphan])
@@ -966,6 +972,25 @@ class TestUserEvents:
         owner.add_event("Work", time(9, 0), time(17, 0))
         assert owner.tasks[0].is_pet_task() is False
 
+    def test_an_event_is_daily_unless_told_otherwise(self, owner):
+        owner.add_event("Work", time(9, 0), time(17, 0))
+        assert owner.tasks[0].recurrence == "daily"
+
+    def test_an_event_takes_the_same_recurrence_options_as_a_task(self, owner):
+        # "so 'work, weekdays 9-5' is one event rather than five"
+        owner.add_event("Work", time(9, 0), time(17, 0),
+                        recurrence="weekly", days_of_week=WEEKDAYS)
+        owner.add_event("Dentist", time(14, 0), time(15, 0),
+                        recurrence="once", on_date=SATURDAY)
+        work, dentist = owner.tasks
+        assert (work.recurrence, work.days_of_week) == ("weekly", WEEKDAYS)
+        assert (dentist.recurrence, dentist.on_date) == ("once", SATURDAY)
+
+    def test_an_event_with_an_incomplete_recurrence_is_refused_and_not_added(self, owner):
+        with pytest.raises(ValueError):
+            owner.add_event("Work", time(9, 0), time(17, 0), recurrence="weekly")
+        assert owner.tasks == []
+
     def test_awake_window_is_the_pair_the_scheduler_may_use(self, owner):
         assert owner.awake_window() == (time(7, 0), time(20, 0))
 
@@ -987,40 +1012,43 @@ class TestUserWorkflow:
         return owner
 
     def test_request_schedule_builds_and_keeps_plan_a(self, busy):
-        plan = busy.request_schedule("priority")
+        plan = busy.request_schedule("priority", MONDAY)
         assert plan.schedule_id == "plan-a"
         assert plan.strategy == "priority"
         assert busy.candidates == [plan]
 
     def test_the_plans_label_names_the_strategy(self, busy):
-        assert busy.request_schedule("shortest").label == "Plan A (shortest)"
+        assert busy.request_schedule("shortest", MONDAY).label == "Plan A (shortest)"
 
-    def test_a_plan_is_built_over_the_users_tasks_and_awake_window(self, busy):
-        plan = busy.request_schedule("priority")
-        assert len(plan.tasks) == len(busy.tasks)
+    def test_a_plan_is_built_over_the_days_tasks_and_awake_window(self, busy):
+        # a Saturday-only task is one of the user's tasks, but not one of Monday's
+        busy.add_task(make_task("bath", recurrence="weekly", days_of_week={5}))
+        plan = busy.request_schedule("priority", MONDAY)
+        assert plan.tasks == busy.tasks_on(MONDAY)
+        assert plan.get_task("bath") is None
         assert (plan.wake_time, plan.sleep_time) == busy.awake_window()
 
     def test_asking_for_a_first_plan_again_starts_the_comparison_over(self, busy):
-        busy.request_schedule("priority")
+        busy.request_schedule("priority", MONDAY)
         busy.request_alternative("shortest")
-        busy.request_schedule("longest")
+        busy.request_schedule("longest", MONDAY)
         assert [plan.schedule_id for plan in busy.candidates] == ["plan-a"]
 
     def test_request_alternative_adds_a_second_plan_to_compare(self, busy):
-        busy.request_schedule("priority")
+        busy.request_schedule("priority", MONDAY)
         alternative = busy.request_alternative("shortest")
         assert alternative.schedule_id == "plan-b"
         assert len(busy.candidates) == 2
 
     def test_an_alternative_with_nothing_to_compare_to_becomes_plan_a(self, busy):
         # "nothing to be an alternative to yet"
-        plan = busy.request_alternative("shortest")
+        plan = busy.request_alternative("shortest", MONDAY)
         assert plan.schedule_id == "plan-a"
         assert len(busy.candidates) == 1
 
     def test_a_new_alternative_replaces_the_old_one(self, busy):
         # "there are only ever two candidates"
-        busy.request_schedule("priority")
+        busy.request_schedule("priority", MONDAY)
         busy.request_alternative("shortest")
         busy.request_alternative("longest")
         assert len(busy.candidates) == 2
@@ -1030,12 +1058,12 @@ class TestUserWorkflow:
         assert owner.compare_candidates() == "No plans yet -- ask for a schedule first."
 
     def test_compare_with_one_plan_asks_for_an_alternative(self, busy):
-        busy.request_schedule("priority")
+        busy.request_schedule("priority", MONDAY)
         text = busy.compare_candidates()
         assert "Ask for an alternative to have something to compare this to." in text
 
     def test_compare_shows_both_plans_and_how_to_choose(self, busy):
-        busy.request_schedule("priority")
+        busy.request_schedule("priority", MONDAY)
         busy.request_alternative("shortest")
         text = busy.compare_candidates()
         assert "Plan A (priority)" in text
@@ -1044,7 +1072,7 @@ class TestUserWorkflow:
 
     def test_compare_says_when_both_plans_fit_the_same_tasks(self, busy):
         # "Both plans fit the same tasks -- only the order differs."
-        busy.request_schedule("priority")
+        busy.request_schedule("priority", MONDAY)
         busy.request_alternative("shortest")
         assert "only the order differs" in busy.compare_candidates()
 
@@ -1055,14 +1083,14 @@ class TestUserWorkflow:
                                  duration_minutes=700))
         owner.add_task(make_task("small", title="Small job", priority=9,
                                  duration_minutes=600))
-        owner.request_schedule("priority")   # small first, then huge will not fit
+        owner.request_schedule("priority", MONDAY)   # small first, then huge will not fit
         owner.request_alternative("longest")  # huge first, then small will not fit
         text = owner.compare_candidates()
         assert "Only Plan A (priority) fits: Small job" in text
         assert "Only Plan B (longest) fits: Huge job" in text
 
     def test_choose_schedule_saves_the_plan_the_user_picked(self, busy):
-        busy.request_schedule("priority")
+        busy.request_schedule("priority", MONDAY)
         busy.request_alternative("shortest")
         chosen = busy.choose_schedule("plan-b")
         assert chosen.is_saved is True
@@ -1070,7 +1098,7 @@ class TestUserWorkflow:
 
     def test_choosing_again_unsaves_the_plan_it_replaces(self, busy):
         # "there is no history, so the plan being replaced stops being saved"
-        busy.request_schedule("priority")
+        busy.request_schedule("priority", MONDAY)
         busy.request_alternative("shortest")
         first = busy.choose_schedule("plan-a")
         busy.choose_schedule("plan-b")
@@ -1078,16 +1106,16 @@ class TestUserWorkflow:
         assert busy.get_saved_schedule().schedule_id == "plan-b"
 
     def test_choosing_a_plan_that_is_not_on_offer_is_refused(self, busy):
-        busy.request_schedule("priority")
+        busy.request_schedule("priority", MONDAY)
         with pytest.raises(ValueError):
             busy.choose_schedule("plan-z")
 
     def test_there_is_no_saved_schedule_until_one_is_chosen(self, busy):
-        busy.request_schedule("priority")
+        busy.request_schedule("priority", MONDAY)
         assert busy.get_saved_schedule() is None
 
     def test_discard_unchosen_drops_the_plans_the_user_did_not_pick(self, busy):
-        busy.request_schedule("priority")
+        busy.request_schedule("priority", MONDAY)
         busy.request_alternative("shortest")
         busy.discard_unchosen("plan-a")
         assert [plan.schedule_id for plan in busy.candidates] == ["plan-a"]
@@ -1098,13 +1126,19 @@ class TestUserWorkflow:
 # ---------------------------------------------------------------------------
 
 class TestWholeDay:
-    """One realistic day exercising the pieces together, the way main.py does."""
+    """One realistic week exercising the pieces together, the way main.py does:
+    work on weekdays, a bath on Saturdays, and daily pet care."""
 
     @pytest.fixture
     def day(self, owner):
         mochi = owner.get_pet("pet_1")
         whiskers = owner.get_pet("pet_2")
-        owner.add_event("Work", time(9, 0), time(17, 0))
+        owner.add_event("Work", time(9, 0), time(17, 0),
+                        recurrence="weekly", days_of_week=WEEKDAYS)
+        owner.add_task(make_task("bath", title="Bathe Mochi", priority=3,
+                                 duration_minutes=30, preferred_start=time(10, 0),
+                                 pets=[mochi], recurrence="weekly",
+                                 days_of_week={5}))
         owner.add_task(make_task("breakfast", title="Feed the pets", priority=5,
                                  duration_minutes=15, preferred_start=time(7, 30),
                                  pets=[mochi, whiskers]))
@@ -1117,33 +1151,33 @@ class TestWholeDay:
         return owner
 
     def test_the_fixed_event_keeps_its_own_hours(self, day):
-        plan = day.request_schedule("priority")
+        plan = day.request_schedule("priority", MONDAY)
         assert plan.get_placement("event_1") == (time(9, 0), time(17, 0))
 
     def test_medicine_lands_after_breakfast(self, day):
-        plan = day.request_schedule("priority")
+        plan = day.request_schedule("priority", MONDAY)
         breakfast = plan.get_placement("breakfast")
         medicine = plan.get_placement("medicine")
         assert breakfast is not None and medicine is not None
         assert to_minutes(medicine[0]) >= to_minutes(breakfast[1])
 
     def test_nothing_is_scheduled_during_work(self, day):
-        plan = day.request_schedule("priority")
+        plan = day.request_schedule("priority", MONDAY)
         during_work = plan.tasks_in_window(time(9, 0), time(17, 0))
         assert [task.task_id for task in during_work] == ["event_1"]
 
     def test_every_task_fits_in_this_day(self, day):
-        plan = day.request_schedule("priority")
+        plan = day.request_schedule("priority", MONDAY)
         assert plan.unplaced_tasks() == []
 
     def test_the_explanation_mentions_every_placed_task(self, day):
-        plan = day.request_schedule("priority")
+        plan = day.request_schedule("priority", MONDAY)
         text = plan.explain()
         for task in plan.placed_tasks():
             assert task.title in text
 
     def test_the_day_can_be_planned_compared_and_saved(self, day):
-        day.request_schedule("priority")
+        day.request_schedule("priority", MONDAY)
         day.request_alternative("earliest")
         assert "Choosing between them:" in day.compare_candidates()
         saved = day.choose_schedule("plan-b")
@@ -1151,13 +1185,30 @@ class TestWholeDay:
         assert day.get_saved_schedule() is saved
         assert [plan.schedule_id for plan in day.candidates] == ["plan-b"]
 
+    def test_the_saturday_bath_is_not_part_of_a_weekday(self, day):
+        plan = day.request_schedule("priority", MONDAY)
+        assert plan.get_task("bath") is None
+
+    def test_saturday_has_no_work_and_gets_the_bath_it_asked_for(self, day):
+        plan = day.request_schedule("priority", SATURDAY)
+        assert plan.get_task("event_1") is None
+        assert plan.get_placement("bath") == (time(10, 0), time(10, 30))
+
+    def test_the_daily_pet_care_happens_on_both_days(self, day):
+        for planned_day in (MONDAY, SATURDAY):
+            plan = day.request_schedule("priority", planned_day)
+            for task_id in ("breakfast", "medicine", "walk"):
+                assert plan.contains_task(task_id)
+
+    def test_the_explanation_names_the_day_it_plans(self, day):
+        plan = day.request_schedule("priority", SATURDAY)
+        assert "(2026-10-10)" in plan.explain()
+        assert "(weekly on Sat)" in plan.explain()
+
 
 # ---------------------------------------------------------------------------
 # recurring tasks -- daily, weekly on fixed weekdays, and one-off
 # ---------------------------------------------------------------------------
-
-SATURDAY = date(2026, 10, 10)
-MONDAY = date(2026, 10, 5)
 
 
 class TestTaskRecurrence:
@@ -1173,10 +1224,31 @@ class TestTaskRecurrence:
         assert bath.occurs_on(SATURDAY) is True
         assert bath.occurs_on(MONDAY) is False
 
+    def test_a_weekly_task_can_happen_on_several_weekdays(self):
+        walk = make_task("walk", recurrence="weekly", days_of_week=WEEKDAYS)
+        week = [date(2026, 10, 5 + offset) for offset in range(7)]
+        assert [walk.occurs_on(day) for day in week] == [True] * 5 + [False] * 2
+
+    def test_a_weekly_task_comes_back_every_week(self):
+        bath = make_task("bath", recurrence="weekly", days_of_week={5})
+        assert bath.occurs_on(date(2026, 10, 17)) is True
+        assert bath.occurs_on(date(2027, 1, 2)) is True
+
+    def test_a_weekly_task_keeps_its_own_copy_of_the_weekdays(self):
+        days = {5}
+        bath = make_task("bath", recurrence="weekly", days_of_week=days)
+        days.add(0)
+        assert bath.occurs_on(MONDAY) is False
+
     def test_a_one_off_task_happens_only_on_its_date(self):
         vet = make_task("vet", recurrence="once", on_date=SATURDAY)
         assert vet.occurs_on(SATURDAY) is True
+        # the same weekday a week later is not the same date
         assert vet.occurs_on(date(2026, 10, 17)) is False
+
+    def test_a_weekly_task_with_an_empty_set_of_weekdays_is_refused(self):
+        with pytest.raises(ValueError):
+            make_task("bath", recurrence="weekly", days_of_week=set())
 
     def test_a_weekly_task_without_weekdays_is_refused(self):
         with pytest.raises(ValueError):
@@ -1196,6 +1268,11 @@ class TestTaskRecurrence:
         assert "(weekly on Mon, Thu)" in bath.describe()
         vet = make_task("vet", recurrence="once", on_date=SATURDAY)
         assert "(once on 2026-10-10)" in vet.describe()
+
+    def test_recurrence_label_lists_weekdays_in_week_order(self):
+        assert make_task("feed").recurrence_label() == "daily"
+        walk = make_task("walk", recurrence="weekly", days_of_week={6, 2, 0})
+        assert walk.recurrence_label() == "weekly on Mon, Wed, Sun"
 
 
 class TestUserRecurrence:
@@ -1226,6 +1303,27 @@ class TestUserRecurrence:
         assert alternative.day == SATURDAY
         assert alternative.contains_task("bath")
 
+    def test_the_alternative_can_be_given_its_own_day(self, week):
+        week.request_schedule("priority", SATURDAY)
+        alternative = week.request_alternative("shortest", MONDAY)
+        assert alternative.day == MONDAY
+        assert alternative.contains_task("vet")
+
+    def test_a_day_with_nothing_on_it_says_so(self, owner):
+        owner.add_task(make_task("bath", recurrence="weekly", days_of_week={5}))
+        plan = owner.request_schedule("priority", MONDAY)
+        assert plan.tasks == []
+        assert "Nothing could be planned for this day." in plan.explain()
+
+    def test_a_one_off_task_is_gone_once_its_day_has_passed(self, week):
+        next_monday = date(2026, 10, 12)
+        assert week.request_schedule("priority", next_monday).get_task("vet") is None
+
+    def test_a_dependency_across_different_recurrences_is_allowed(self, week):
+        # "The two tasks may recur differently"
+        week.set_dependency("feed", "bath")
+        assert week.get_task("feed").depends_on == ["bath"]
+
     def test_a_recurring_event_only_blocks_its_own_days(self, owner):
         owner.add_event("Work", time(9, 0), time(17, 0),
                         recurrence="weekly", days_of_week={0, 1, 2, 3, 4})
@@ -1242,3 +1340,14 @@ class TestUserRecurrence:
         week.set_dependency("feed", "bath")
         saturday = week.request_schedule("priority", SATURDAY)
         assert saturday.get_placement("feed")[0] >= saturday.get_placement("bath")[1]
+
+    def test_a_weekly_prerequisite_that_does_not_fit_blocks_only_its_own_day(self, owner):
+        # on Saturday the bath is part of the day, so feed has to wait for it --
+        # and it never fits. On Monday the bath is not there to wait for.
+        owner.add_task(make_task("bath", duration_minutes=1000,
+                                 recurrence="weekly", days_of_week={5}))
+        owner.add_task(make_task("feed", depends_on=["bath"]))
+        saturday = owner.request_schedule("priority", SATURDAY)
+        assert [task.task_id for task in saturday.blocked_tasks()] == ["feed"]
+        assert "feed -- needs bath first" in saturday.explain()
+        assert owner.request_schedule("priority", MONDAY).contains_task("feed")
