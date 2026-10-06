@@ -898,6 +898,29 @@ class TestUserTasks:
     def test_set_time_preference_on_an_unknown_task_is_harmless(self, owner):
         owner.set_time_preference("nope", (time(10, 0), time(11, 0)), 45)
 
+    def test_set_recurrence_changes_the_days_a_task_happens_on(self, owner):
+        owner.add_task(make_task("bath"))
+        owner.set_recurrence("bath", "weekly", {5})
+        assert [task.task_id for task in owner.tasks_on(SATURDAY)] == ["bath"]
+        assert owner.tasks_on(MONDAY) == []
+
+    def test_set_recurrence_on_an_unknown_task_is_harmless(self, owner):
+        owner.set_recurrence("nope", "weekly", {5})  # must not raise
+
+    def test_set_recurrence_with_missing_detail_is_refused(self, owner):
+        owner.add_task(make_task("vet"))
+        with pytest.raises(ValueError):
+            owner.set_recurrence("vet", "once")
+        assert owner.get_task("vet").recurrence == "daily"
+
+    def test_set_recurrence_shows_up_in_the_next_plan_not_the_old_one(self, owner):
+        # "A plan already built is not rebuilt; the change shows up in the next plan"
+        owner.add_task(make_task("bath"))
+        before = owner.request_schedule("priority", MONDAY)
+        owner.set_recurrence("bath", "weekly", {5})
+        assert before.contains_task("bath")
+        assert owner.request_schedule("priority", MONDAY).get_task("bath") is None
+
 
 # ---------------------------------------------------------------------------
 # User -- dependencies and cycles
@@ -1308,6 +1331,47 @@ class TestTaskRecurrence:
         assert make_task("feed").recurrence_label() == "daily"
         walk = make_task("walk", recurrence="weekly", days_of_week={6, 2, 0})
         assert walk.recurrence_label() == "weekly on Mon, Wed, Sun"
+
+    def test_set_recurrence_changes_which_days_a_task_happens_on(self):
+        bath = make_task("bath", recurrence="weekly", days_of_week={5})
+        bath.set_recurrence("weekly", {6})
+        assert bath.occurs_on(SATURDAY) is False
+        assert bath.occurs_on(date(2026, 10, 11)) is True
+
+    def test_set_recurrence_can_turn_a_daily_task_into_a_one_off(self):
+        vet = make_task("vet")
+        vet.set_recurrence("once", on_date=SATURDAY)
+        assert vet.recurrence == "once"
+        assert vet.occurs_on(SATURDAY) and not vet.occurs_on(MONDAY)
+
+    def test_set_recurrence_drops_detail_the_new_recurrence_does_not_use(self):
+        # "a task switched from weekly to daily does not hold on to weekdays"
+        bath = make_task("bath", recurrence="weekly", days_of_week={5})
+        bath.set_recurrence("daily", {5}, SATURDAY)
+        assert bath.days_of_week == set()
+        assert bath.on_date is None
+        assert bath.recurrence_label() == "daily"
+
+    def test_set_recurrence_keeps_its_own_copy_of_the_weekdays(self):
+        days = {5}
+        bath = make_task("bath")
+        bath.set_recurrence("weekly", days)
+        days.add(0)
+        assert bath.occurs_on(MONDAY) is False
+
+    @pytest.mark.parametrize(
+        "recurrence, days_of_week, on_date",
+        [("weekly", None, None), ("weekly", set(), None), ("once", None, None),
+         ("monthly", None, None)],
+    )
+    def test_a_refused_set_recurrence_leaves_the_task_as_it_was(
+        self, recurrence, days_of_week, on_date
+    ):
+        # "a refused change leaves the task as it was"
+        bath = make_task("bath", recurrence="weekly", days_of_week={5})
+        with pytest.raises(ValueError):
+            bath.set_recurrence(recurrence, days_of_week, on_date)
+        assert (bath.recurrence, bath.days_of_week, bath.on_date) == ("weekly", {5}, None)
 
 
 class TestUserRecurrence:

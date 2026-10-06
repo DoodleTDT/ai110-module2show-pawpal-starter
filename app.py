@@ -594,6 +594,48 @@ with tasks_tab:
                     flash("ok", f"Updated when {edit_task.title} should happen.")
                 st.rerun()
 
+            # outside a form the widgets react straight away, so only the picker
+            # the chosen recurrence needs is shown. Each starts from what the task
+            # already has, so saving without touching them changes nothing.
+            new_recurrence = st.selectbox(
+                "Repeats",
+                RECURRENCES,
+                index=RECURRENCES.index(edit_task.recurrence),
+                key=f"edit_recurrence_{suffix}",
+            )
+            new_weekdays = None
+            new_on_day = None
+            if new_recurrence == "weekly":
+                new_weekdays = set(
+                    st.multiselect(
+                        "On these days",
+                        list(range(7)),
+                        default=sorted(edit_task.days_of_week),
+                        format_func=lambda number: WEEKDAY_NAMES[number],
+                        key=f"edit_weekdays_{suffix}",
+                    )
+                )
+            elif new_recurrence == "once":
+                new_on_day = st.date_input(
+                    "On this date",
+                    value=edit_task.on_date or date.today(),
+                    key=f"edit_on_date_{suffix}",
+                )
+            if st.button("Save how often"):
+                try:
+                    owner.set_recurrence(
+                        edit_task.task_id, new_recurrence, new_weekdays, new_on_day
+                    )
+                    flash(
+                        "ok",
+                        f"{edit_task.title} now repeats {edit_task.recurrence_label()}. "
+                        "Build the plans again to see it.",
+                    )
+                except ValueError as problem:
+                    # set_recurrence leaves the task as it was when it refuses
+                    flash("err", str(problem))
+                st.rerun()
+
             link_pet_id = pick_pet_id(owner, "Pet to link or unlink", "link_pet")
             link_pet = owner.get_pet(link_pet_id) if link_pet_id is not None else None
             if link_pet is not None:

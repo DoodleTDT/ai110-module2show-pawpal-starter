@@ -94,18 +94,34 @@ class Task:
         # after "feed breakfast"). Ids, not Task objects, so the links stay flat.
         self.depends_on: list[str] = depends_on if depends_on is not None else []
 
-        # which days the task is part of. A weekly task needs its weekdays and a
-        # one-off task needs its date, or occurs_on could never say yes.
+        # which days the task is part of. Set through set_recurrence so a new task
+        # and a changed one are held to the same rules.
+        self.recurrence: str = "daily"
+        # date.weekday() numbers, Monday is 0
+        self.days_of_week: set[int] = set()
+        self.on_date: date | None = None
+        self.set_recurrence(recurrence, days_of_week, on_date)
+
+    def set_recurrence(
+        self,
+        recurrence: str,
+        days_of_week: set[int] | None = None,
+        on_date: date | None = None,
+    ) -> None:
+        """Set which days the task happens on. A weekly task needs its weekdays and
+        a one-off task needs its date, or occurs_on could never say yes. Everything
+        is checked before anything changes, so a refused change leaves the task as
+        it was. Only the detail the recurrence uses is kept -- a task switched from
+        weekly to daily does not hold on to weekdays that no longer mean anything."""
         if recurrence not in RECURRENCES:
             raise ValueError(f"recurrence must be one of {', '.join(RECURRENCES)}")
         if recurrence == "weekly" and not days_of_week:
             raise ValueError("a weekly task needs at least one day of the week")
         if recurrence == "once" and on_date is None:
             raise ValueError("a one-off task needs the date it happens on")
-        self.recurrence: str = recurrence
-        # date.weekday() numbers, Monday is 0
-        self.days_of_week: set[int] = set(days_of_week) if days_of_week else set()
-        self.on_date: date | None = on_date
+        self.recurrence = recurrence
+        self.days_of_week = set(days_of_week) if recurrence == "weekly" and days_of_week else set()
+        self.on_date = on_date if recurrence == "once" else None
 
     def occurs_on(self, day: date) -> bool:
         """Return True if this task is part of the given day. Every 'is this task
@@ -634,6 +650,21 @@ class User:
             return
         task.preferred_start, task.preferred_end = window
         task.duration_minutes = duration
+
+    def set_recurrence(
+        self,
+        task_id: str,
+        recurrence: str,
+        days_of_week: set[int] | None = None,
+        on_date: date | None = None,
+    ) -> None:
+        """Change which days a task happens on -- 'the bath moves to Sundays'.
+        A plan already built is not rebuilt; the change shows up in the next plan
+        asked for. Raises ValueError, leaving the task unchanged, if the
+        recurrence is missing the weekdays or date it needs."""
+        task = self.get_task(task_id)
+        if task is not None:
+            task.set_recurrence(recurrence, days_of_week, on_date)
 
     def set_dependency(self, task_id: str, prerequisite_id: str) -> None:
         """Say that one task must happen before another -- 'walk Mochi only after
