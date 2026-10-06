@@ -6,11 +6,11 @@ file is only the surface -- it collects input, calls those methods, and prints w
 they hand back. No scheduling decisions are made here.
 """
 
-from datetime import time
+from datetime import date, time
 
 import streamlit as st
 
-from pawpal_system import Task, User, to_minutes
+from pawpal_system import RECURRENCES, WEEKDAY_NAMES, Task, User, to_minutes
 
 st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="wide")
 
@@ -41,8 +41,9 @@ STEP = 300
 
 
 def demo_owner() -> "User":
-    """Build an owner with two pets, a fixed work block, and a dependency, so the
-    app has something to plan on first load and every feature has an example."""
+    """Build an owner with two pets, a fixed work block, a dependency, and tasks
+    that repeat in each way a task can, so the app has something to plan on first
+    load and every feature has an example."""
     owner = User("Jordan", time(7, 0), time(20, 0))
     mochi = owner.add_pet("pet_1", "Mochi", "dog", 3, "pulls on the leash")
     nori = owner.add_pet("pet_2", "Nori", "cat", 2, "needs meds with food")
@@ -58,12 +59,25 @@ def demo_owner() -> "User":
         Task("task_4", "Give Nori her medicine", "medicine", 5, 5, pets=[nori])
     )
     owner.add_task(Task("task_5", "Clean the litter box", "cleaning", 2, 10, pets=[nori]))
+    # a one-off: the vet call only happens today
     owner.add_task(
-        Task("task_6", "Vet call about Mochi", "vet", 4, 20, time(10, 0), time(11, 0))
+        Task(
+            "task_6", "Vet call about Mochi", "vet", 4, 20, time(10, 0), time(11, 0),
+            recurrence="once", on_date=date.today(),
+        )
     )
-    owner.add_task(Task("task_7", "Buy pet food", "errand", 2, 55))
+    # weekly tasks come back on fixed weekdays (date.weekday() numbers, Monday is 0)
+    owner.add_task(
+        Task("task_7", "Buy pet food", "errand", 2, 55, recurrence="weekly", days_of_week={5})
+    )
+    owner.add_task(
+        Task(
+            "task_8", "Bathe Mochi", "grooming", 3, 30, time(10, 0), pets=[mochi],
+            recurrence="weekly", days_of_week={6},
+        )
+    )
 
-    owner.add_event("Work", time(9, 0), time(17, 0))
+    owner.add_event("Work", time(9, 0), time(17, 0), recurrence="weekly", days_of_week={0, 1, 2, 3, 4})
     # medicine goes with food, so it cannot be placed until breakfast is placed
     owner.set_dependency("task_4", "task_3")
     return owner
@@ -171,6 +185,7 @@ def task_rows(tasks: list) -> list[dict]:
             "fixed": "yes" if task.is_fixed else "",
             "pets": ", ".join(task.pet_names()) if task.is_pet_task() else "--",
             "after": ", ".join(task.depends_on) if task.has_dependencies() else "--",
+            "repeats": task.recurrence_label(),
         }
         for task in tasks
     ]
@@ -188,9 +203,41 @@ def placement_rows(schedule, tasks: list) -> list[dict]:
                 "task": task.title,
                 "pets": ", ".join(task.pet_names()) if task.is_pet_task() else "--",
                 "priority": task.priority,
+                "repeats": task.recurrence_label(),
             }
         )
     return rows
+
+
+def day_label(day: date) -> str:
+    """Name a day the way the rest of the page does: weekday first, since that is
+    what decides which weekly tasks belong to it."""
+    return day.strftime("%A %Y-%m-%d")
+
+
+def recurrence_fields(key: str) -> tuple:
+    """Draw the 'how often' inputs and hand back (recurrence, days_of_week,
+    on_date) ready for Task or add_event. Inside a form nothing reacts until
+    submit, so the weekday and date pickers are always shown and only the one the
+    chosen recurrence needs is passed on. Task itself refuses a weekly task with no
+    days, so that check is not repeated here."""
+    recurrence = st.selectbox(
+        "Repeats", RECURRENCES, key=f"{key}_recurrence",
+        help="daily: every day. weekly: only on the days picked below. "
+        "once: only on the date picked below.",
+    )
+    weekdays = st.multiselect(
+        "On these days (weekly)",
+        list(range(7)),
+        format_func=lambda number: WEEKDAY_NAMES[number],
+        key=f"{key}_weekdays",
+    )
+    on_day = st.date_input("On this date (once)", value=date.today(), key=f"{key}_on_date")
+    return (
+        recurrence,
+        set(weekdays) if recurrence == "weekly" else None,
+        on_day if recurrence == "once" else None,
+    )
 
 
 def table(rows: list[dict], empty_message: str) -> None:
@@ -281,8 +328,13 @@ with st.sidebar:
     else:
         st.metric("Hours awake", f"{awake_minutes // 60}h {awake_minutes % 60:02d}m")
 
-    booked = sum(task.duration_minutes for task in owner.tasks)
-    st.metric("Minutes of tasks added", booked)
+    st.subheader("Day to plan")
+    plan_day = st.date_input("Plan for", value=date.today(), key="plan_day")
+    # only the tasks that belong to that day count -- a Saturday errand does not
+    # take up any of Monday
+    day_tasks = owner.tasks_on(plan_day)
+    booked = sum(task.duration_minutes for task in day_tasks)
+    st.metric(f"Minutes of tasks on {plan_day.strftime('%A')}", booked)
     if booked > awake_minutes > 0:
         st.warning("More tasks than hours -- expect some to be left out of a plan.")
 
@@ -401,6 +453,9 @@ with tasks_tab:
                 help="A fixed task goes exactly where you pin it or not at all.",
             )
 
+            st.markdown("How often")
+            recurrence, weekdays, on_day = recurrence_fields("task")
+
             if st.form_submit_button("Add task"):
                 start = pref_start if wants_window else None
                 end = pref_end if (wants_window and use_end) else None
@@ -436,11 +491,15 @@ with tasks_tab:
                                     )
                                     if pet is not None
                                 ],
+                                recurrence=recurrence,
+                                days_of_week=weekdays,
+                                on_date=on_day,
                             )
                         )
                         flash("ok", f"Added {title.strip()}.")
                     except ValueError as problem:
-                        # two tasks sharing an id would overwrite each other's slot
+                        # two tasks sharing an id would overwrite each other's slot,
+                        # and a weekly task with no days could never happen
                         flash("err", str(problem))
                 st.rerun()
 
@@ -454,14 +513,26 @@ with tasks_tab:
             event_title = st.text_input("What is it?", placeholder="Work")
             event_start = time_field("Starts", time(9, 0))
             event_end = time_field("Ends", time(17, 0))
+            event_recurrence, event_weekdays, event_on_day = recurrence_fields("event")
             if st.form_submit_button("Add commitment"):
                 if not event_title.strip():
                     flash("err", "A commitment needs a name.")
                 elif to_minutes(event_end) <= to_minutes(event_start):
                     flash("err", "A commitment has to end after it starts.")
                 else:
-                    owner.add_event(event_title.strip(), event_start, event_end)
-                    flash("ok", f"Added {event_title.strip()}.")
+                    try:
+                        # "work, weekdays 9-5" is one event rather than five
+                        owner.add_event(
+                            event_title.strip(),
+                            event_start,
+                            event_end,
+                            recurrence=event_recurrence,
+                            days_of_week=event_weekdays,
+                            on_date=event_on_day,
+                        )
+                        flash("ok", f"Added {event_title.strip()}.")
+                    except ValueError as problem:
+                        flash("err", str(problem))
                 st.rerun()
 
         st.markdown("**Change a task**")
@@ -611,8 +682,21 @@ with plans_tab:
     st.subheader("Plans")
     st.caption(
         "Build one plan, then an alternative under a different strategy, and compare "
-        "what each one made room for."
+        "what each one made room for. Change the day to plan in the sidebar."
     )
+
+    st.markdown(f"**On {day_label(plan_day)}**")
+    table(
+        task_rows(day_tasks),
+        f"Nothing happens on {plan_day.strftime('%A')} -- every task is for another day.",
+    )
+    # tasks that repeat on other days, so it is clear why they are missing above
+    other_days = [task for task in owner.tasks if not task.occurs_on(plan_day)]
+    if other_days:
+        st.caption(
+            "Not on this day: "
+            + ", ".join(f"{task.title} ({task.recurrence_label()})" for task in other_days)
+        )
 
     if not owner.tasks:
         st.info("Add some tasks first -- there is nothing to plan yet.")
@@ -622,15 +706,23 @@ with plans_tab:
             strategy_a = st.selectbox("Plan A sorts by", STRATEGIES, index=0)
             if st.button("Build Plan A", width="stretch"):
                 # asking for a first plan again starts the comparison over
-                owner.request_schedule(strategy_a)
-                flash("ok", f"Built Plan A, sorted by {strategy_a}.")
+                owner.request_schedule(strategy_a, plan_day)
+                flash("ok", f"Built Plan A for {day_label(plan_day)}, sorted by {strategy_a}.")
                 st.rerun()
         with b_col:
             strategy_b = st.selectbox("Plan B sorts by", STRATEGIES, index=1)
             if st.button("Build Plan B", width="stretch"):
-                owner.request_alternative(strategy_b)
-                flash("ok", f"Built Plan B, sorted by {strategy_b}.")
+                # no day passed on purpose: Plan B plans the same day as Plan A, since
+                # two plans for different days are not a fair comparison
+                plan_b = owner.request_alternative(strategy_b)
+                flash("ok", f"Built Plan B for {day_label(plan_b.day)}, sorted by {strategy_b}.")
                 st.rerun()
+
+        if owner.candidates and owner.candidates[0].day != plan_day:
+            st.warning(
+                f"These plans are for {day_label(owner.candidates[0].day)}. Build Plan A "
+                f"again to plan {day_label(plan_day)}."
+            )
 
         if not owner.candidates:
             st.info("No plans yet -- build Plan A to start.")
@@ -640,6 +732,7 @@ with plans_tab:
                 with column:
                     numbers = candidate.summary()
                     st.markdown(f"### {candidate.label}")
+                    st.caption(day_label(candidate.day))
                     top, middle, bottom = st.columns(3)
                     top.metric("Placed", numbers["tasks_placed"])
                     middle.metric("Left out", numbers["tasks_dropped"])
@@ -699,7 +792,7 @@ with plans_tab:
     if saved_schedule is None:
         st.caption("Nothing saved yet. There is no history -- saving again replaces it.")
     else:
-        st.success(f"{saved_schedule.label} for {saved_schedule.day}")
+        st.success(f"{saved_schedule.label} for {day_label(saved_schedule.day)}")
         st.code(saved_schedule.explain(), language=None)
 
 
@@ -721,7 +814,8 @@ with day_tab:
         def plan_label(schedule_id: str) -> str:
             """Name a plan in the dropdown, marking the one that was saved."""
             plan = schedules[schedule_id]
-            return plan.label + (" -- saved" if plan.is_saved else "")
+            label = f"{plan.label}, {day_label(plan.day)}"
+            return label + (" -- saved" if plan.is_saved else "")
 
         schedule = schedules[
             st.selectbox("Which plan?", list(schedules), format_func=plan_label)
@@ -756,8 +850,12 @@ with day_tab:
                 )
                 # a fixed task defends its window, which is the usual reason a slice
                 # of the day has no room left in it
+                # only commitments that happen on the plan's day -- weekday work
+                # does not defend anything on a Sunday
                 defenders = [
-                    task for task in owner.tasks if task.blocks(slice_start, slice_end)
+                    task
+                    for task in owner.tasks_on(schedule.day)
+                    if task.blocks(slice_start, slice_end)
                 ]
                 if defenders:
                     st.caption(
@@ -782,6 +880,11 @@ with day_tab:
             if placement is not None:
                 start, end = placement
                 st.success(f"{looked_up.title}: {clock(start)}-{clock(end)}")
+            elif not looked_up.occurs_on(schedule.day):
+                st.warning(
+                    f"{looked_up.title} does not happen on {day_label(schedule.day)} "
+                    f"-- it repeats {looked_up.recurrence_label()}."
+                )
             elif schedule.get_task(looked_up.task_id) is None:
                 st.warning(f"{looked_up.title} was not part of this plan.")
             elif not schedule.dependencies_met(looked_up):
