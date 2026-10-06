@@ -785,11 +785,7 @@ with day_tab:
             elif schedule.get_task(looked_up.task_id) is None:
                 st.warning(f"{looked_up.title} was not part of this plan.")
             elif not schedule.dependencies_met(looked_up):
-                missing = [
-                    prerequisite_id
-                    for prerequisite_id in looked_up.depends_on
-                    if prerequisite_id not in schedule.placements
-                ]
+                missing = schedule.missing_prerequisites(looked_up)
                 st.error(
                     f"{looked_up.title} was left out -- it needs "
                     f"{', '.join(missing)} scheduled first."

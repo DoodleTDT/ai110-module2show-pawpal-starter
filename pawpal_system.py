@@ -9,6 +9,14 @@ from datetime import date, time
 # how far the scheduler slides a task when a slot is taken, in minutes
 SEARCH_STEP = 5
 
+# how often a task comes back. "weekly" means on fixed weekdays, not "some day
+# this week" -- that would need to know what already happened, and nothing here
+# keeps a history.
+RECURRENCES = ("daily", "weekly", "once")
+
+# short weekday names, indexed the way date.weekday() counts (Monday is 0)
+WEEKDAY_NAMES = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
 
 def to_minutes(moment: time) -> int:
     """Turn a time into minutes since midnight, so times can be compared and added
@@ -66,9 +74,13 @@ class Task:
         is_fixed: bool = False,
         pets: list["Pet"] | None = None,
         depends_on: list[str] | None = None,
+        recurrence: str = "daily",
+        days_of_week: set[int] | None = None,
+        on_date: date | None = None,
     ) -> None:
         """Store the task's identity, cost in time, priority, time preference,
-        which pets (if any) it belongs to, and which tasks must happen first."""
+        which pets (if any) it belongs to, which tasks must happen first, and which
+        days it happens on."""
         self.task_id: str = task_id
         self.title: str = title
         self.category: str = category
@@ -81,6 +93,39 @@ class Task:
         # ids of tasks that must be placed before this one (e.g. "give medicine"
         # after "feed breakfast"). Ids, not Task objects, so the links stay flat.
         self.depends_on: list[str] = depends_on if depends_on is not None else []
+
+        # which days the task is part of. A weekly task needs its weekdays and a
+        # one-off task needs its date, or occurs_on could never say yes.
+        if recurrence not in RECURRENCES:
+            raise ValueError(f"recurrence must be one of {', '.join(RECURRENCES)}")
+        if recurrence == "weekly" and not days_of_week:
+            raise ValueError("a weekly task needs at least one day of the week")
+        if recurrence == "once" and on_date is None:
+            raise ValueError("a one-off task needs the date it happens on")
+        self.recurrence: str = recurrence
+        # date.weekday() numbers, Monday is 0
+        self.days_of_week: set[int] = set(days_of_week) if days_of_week else set()
+        self.on_date: date | None = on_date
+
+    def occurs_on(self, day: date) -> bool:
+        """Return True if this task is part of the given day. Every 'is this task
+        happening today?' question goes through here, so a schedule only ever
+        considers the tasks that belong to its day."""
+        if self.recurrence == "weekly":
+            return day.weekday() in self.days_of_week
+        if self.recurrence == "once":
+            return day == self.on_date
+        return True
+
+    def recurrence_label(self) -> str:
+        """Return how often the task happens in a few words ('daily', 'weekly on
+        Mon, Thu', 'once on 2026-10-10'), used when describing the task."""
+        if self.recurrence == "weekly":
+            days = ", ".join(WEEKDAY_NAMES[number] for number in sorted(self.days_of_week))
+            return f"weekly on {days}"
+        if self.recurrence == "once":
+            return f"once on {self.on_date}"
+        return "daily"
 
     def is_pet_task(self) -> bool:
         """Return True if this task is for at least one pet, False if it is a
@@ -149,6 +194,9 @@ class Task:
             line += " [fixed]"
         if self.has_dependencies():
             line += " after " + ", ".join(self.depends_on)
+        # daily is the default, so only the unusual cases are worth mentioning
+        if self.recurrence != "daily":
+            line += f" ({self.recurrence_label()})"
         return line
 
 
@@ -298,8 +346,8 @@ class Schedule:
             ready = []
             for task in remaining:
                 # only prerequisites still waiting in this list hold a task back.
-                # A prerequisite that is not part of this day at all is handled
-                # later, by dependencies_met.
+                # A prerequisite that is not part of this day at all does not
+                # apply today -- see dependencies_met.
                 waiting = False
                 for prerequisite_id in task.depends_on:
                     for other in remaining:
@@ -319,13 +367,22 @@ class Schedule:
 
         return ordered
 
+    def missing_prerequisites(self, task: "Task") -> list[str]:
+        """Return the ids of this task's prerequisites that are part of this day
+        but not placed (yet). A prerequisite that is not part of the day at all --
+        a weekly task on one of its off days -- does not apply today, so a daily
+        task that depends on it is not held back six days a week."""
+        considered = {other.task_id for other in self.tasks}
+        return [
+            prerequisite_id
+            for prerequisite_id in task.depends_on
+            if prerequisite_id in considered and prerequisite_id not in self.placements
+        ]
+
     def dependencies_met(self, task: "Task") -> bool:
-        """Return True if all of this task's prerequisites are already placed in
-        this schedule, so it is allowed to be placed now."""
-        for prerequisite_id in task.depends_on:
-            if prerequisite_id not in self.placements:
-                return False
-        return True
+        """Return True if every prerequisite that is part of this day is already
+        placed in this schedule, so the task is allowed to be placed now."""
+        return not self.missing_prerequisites(task)
 
     def earliest_start_for(self, task: "Task") -> time | None:
         """Return the earliest time this task may start -- the end of its latest
@@ -455,11 +512,7 @@ class Schedule:
             lines.append("")
             lines.append("Waiting on something that never got scheduled:")
             for task in blocked:
-                missing = [
-                    prerequisite_id
-                    for prerequisite_id in task.depends_on
-                    if prerequisite_id not in self.placements
-                ]
+                missing = self.missing_prerequisites(task)
                 lines.append(
                     f"  {task.title} -- needs {', '.join(missing)} first"
                 )
@@ -580,7 +633,9 @@ class User:
         """Say that one task must happen before another -- 'walk Mochi only after
         breakfast'. The schedule then orders them that way instead of by strategy
         alone. Refuses a dependency that would create a loop, since a loop would
-        leave both tasks permanently unplaceable."""
+        leave both tasks permanently unplaceable. The two tasks may recur
+        differently: on a day the prerequisite does not happen, the dependency
+        simply does not apply."""
         task = self.get_task(task_id)
         if task is None or self.get_task(prerequisite_id) is None:
             return
@@ -636,9 +691,18 @@ class User:
                 to_check.extend(current.depends_on)
         return False
 
-    def add_event(self, title: str, start: time, end: time) -> None:
+    def add_event(
+        self,
+        title: str,
+        start: time,
+        end: time,
+        recurrence: str = "daily",
+        days_of_week: set[int] | None = None,
+        on_date: date | None = None,
+    ) -> None:
         """Add a fixed commitment (work, class, an appointment) that the scheduler
-        must plan around instead of move."""
+        must plan around instead of move. Takes the same recurrence options as
+        Task, so 'work, weekdays 9-5' is one event rather than five."""
         # skip over any id already taken, so deleting an event does not cause the
         # next one to collide with a name still in use
         number = len(self.tasks) + 1
@@ -655,6 +719,9 @@ class User:
                 preferred_start=start,
                 preferred_end=end,
                 is_fixed=True,
+                recurrence=recurrence,
+                days_of_week=days_of_week,
+                on_date=on_date,
             )
         )
 
@@ -700,35 +767,49 @@ class User:
         """Return the (wake_time, sleep_time) pair the scheduler is allowed to use."""
         return (self.wake_time, self.sleep_time)
 
-    def request_schedule(self, strategy: str) -> "Schedule":
-        """Build a first candidate schedule from this user's tasks using the given
-        strategy, store it in candidates, and return it."""
+    def tasks_on(self, day: date) -> list["Task"]:
+        """Return the tasks that are part of the given day -- every daily task,
+        weekly tasks on their weekdays, and one-off tasks on their date."""
+        return [task for task in self.tasks if task.occurs_on(day)]
+
+    def request_schedule(self, strategy: str, day: date | None = None) -> "Schedule":
+        """Build a first candidate schedule for the given day (today if none is
+        given) from this user's tasks using the given strategy, store it in
+        candidates, and return it."""
         # asking for a first plan again starts the comparison over
         self.candidates = []
-        return self._build_candidate(strategy, "plan-a", "Plan A")
+        return self._build_candidate(strategy, "plan-a", "Plan A", day)
 
-    def request_alternative(self, strategy: str) -> "Schedule":
+    def request_alternative(self, strategy: str, day: date | None = None) -> "Schedule":
         """Build a second candidate schedule using a different strategy so the user
-        has something to compare against."""
+        has something to compare against. Without a day it plans the same day as
+        Plan A, since two plans for different days are not a fair comparison."""
         if not self.candidates:
             # nothing to be an alternative to yet
-            return self.request_schedule(strategy)
+            return self.request_schedule(strategy, day)
+        if day is None:
+            day = self.candidates[0].day
         # there are only ever two candidates: a new alternative replaces the old one
         self.candidates = self.candidates[:1]
-        return self._build_candidate(strategy, "plan-b", "Plan B")
+        return self._build_candidate(strategy, "plan-b", "Plan B", day)
 
-    def _build_candidate(self, strategy: str, schedule_id: str, label: str) -> "Schedule":
-        """Make one candidate schedule over this user's tasks and awake window, keep
-        it in candidates, and return it. Shared by request_schedule and
-        request_alternative, which differ only in which slot they fill."""
+    def _build_candidate(
+        self, strategy: str, schedule_id: str, label: str, day: date | None
+    ) -> "Schedule":
+        """Make one candidate schedule from the tasks that are part of that day,
+        within this user's awake window, keep it in candidates, and return it.
+        Shared by request_schedule and request_alternative, which differ only in
+        which slot they fill."""
+        if day is None:
+            day = date.today()
         wake_time, sleep_time = self.awake_window()
         schedule = Schedule(
             schedule_id=schedule_id,
             label=f"{label} ({strategy})",
-            day=date.today(),
+            day=day,
             strategy=strategy,
         )
-        schedule.build(self.tasks, wake_time, sleep_time)
+        schedule.build(self.tasks_on(day), wake_time, sleep_time)
         self.candidates.append(schedule)
         return schedule
 

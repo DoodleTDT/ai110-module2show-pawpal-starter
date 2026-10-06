@@ -448,9 +448,17 @@ class TestPlaceTask:
     def test_a_task_whose_prerequisite_never_got_placed_is_not_placed(self):
         # "a task whose prerequisites never got placed cannot be placed either"
         schedule = make_schedule()
+        too_big = make_task("too_big", duration_minutes=1000)
+        orphan = make_task("orphan", depends_on=["too_big"])
+        schedule.build([too_big, orphan], time(7, 0), time(20, 0))
+        assert schedule.contains_task("orphan") is False
+
+    def test_a_prerequisite_that_is_not_part_of_the_day_does_not_apply(self):
+        # a weekly prerequisite on one of its off days should not block a daily task
+        schedule = make_schedule()
         orphan = make_task("orphan", depends_on=["not_today"])
         schedule.build([orphan], time(7, 0), time(20, 0))
-        assert schedule.contains_task("orphan") is False
+        assert schedule.contains_task("orphan") is True
 
     def test_placed_tasks_never_overlap_each_other(self):
         schedule = make_schedule()
@@ -522,8 +530,8 @@ class TestBuildAndViews:
     def test_blocked_tasks_are_the_ones_waiting_on_a_missing_prerequisite(self):
         # blocked is "as opposed to simply running out of room"
         schedule = make_schedule()
-        blocked = make_task("blocked", depends_on=["not_today"])
         no_room = make_task("no_room", duration_minutes=1000)
+        blocked = make_task("blocked", depends_on=["no_room"])
         schedule.build([blocked, no_room], time(7, 0), time(20, 0))
         assert [task.task_id for task in schedule.blocked_tasks()] == ["blocked"]
 
@@ -618,8 +626,21 @@ class TestDependenciesMet:
 
     def test_a_task_is_held_back_while_a_prerequisite_is_missing(self):
         schedule = make_schedule()
+        schedule.tasks = [make_task("breakfast")]
         assert schedule.dependencies_met(make_task("medicine",
                                                    depends_on=["breakfast"])) is False
+
+    def test_a_prerequisite_that_is_not_part_of_the_day_is_ignored(self):
+        # "a weekly task on one of its off days -- does not apply today"
+        schedule = make_schedule()
+        assert schedule.dependencies_met(make_task("medicine",
+                                                   depends_on=["breakfast"])) is True
+
+    def test_missing_prerequisites_lists_only_the_ones_in_this_day(self):
+        schedule = make_schedule()
+        schedule.tasks = [make_task("breakfast")]
+        task = make_task("medicine", depends_on=["breakfast", "weekly_bath"])
+        assert schedule.missing_prerequisites(task) == ["breakfast"]
 
 
 # ---------------------------------------------------------------------------
@@ -633,7 +654,7 @@ class TestSummaryAndExplain:
         schedule = make_schedule()
         walk = make_task("walk", title="Walk Mochi", duration_minutes=60)
         blocked = make_task("blocked", title="Give medicine",
-                            depends_on=["not_today"])
+                            depends_on=["no_room"])
         no_room = make_task("no_room", title="Repaint the house",
                             duration_minutes=1000)
         schedule.build([walk, blocked, no_room], time(7, 0), time(20, 0))
@@ -670,7 +691,7 @@ class TestSummaryAndExplain:
         # missing prerequisite, so the two are listed separately"
         text = self.build_mixed_day().explain()
         assert "Waiting on something that never got scheduled:" in text
-        assert "needs not_today first" in text
+        assert "needs no_room first" in text
         assert "Left out, no room in the day:" in text
         assert "Repaint the house -- needs 1000 min" in text
 
@@ -1129,3 +1150,95 @@ class TestWholeDay:
         day.discard_unchosen("plan-b")
         assert day.get_saved_schedule() is saved
         assert [plan.schedule_id for plan in day.candidates] == ["plan-b"]
+
+
+# ---------------------------------------------------------------------------
+# recurring tasks -- daily, weekly on fixed weekdays, and one-off
+# ---------------------------------------------------------------------------
+
+SATURDAY = date(2026, 10, 10)
+MONDAY = date(2026, 10, 5)
+
+
+class TestTaskRecurrence:
+    """occurs_on decides which days a task is part of."""
+
+    def test_tasks_are_daily_unless_told_otherwise(self):
+        task = make_task("feed")
+        assert task.recurrence == "daily"
+        assert task.occurs_on(SATURDAY) and task.occurs_on(MONDAY)
+
+    def test_a_weekly_task_happens_only_on_its_weekdays(self):
+        bath = make_task("bath", recurrence="weekly", days_of_week={5})
+        assert bath.occurs_on(SATURDAY) is True
+        assert bath.occurs_on(MONDAY) is False
+
+    def test_a_one_off_task_happens_only_on_its_date(self):
+        vet = make_task("vet", recurrence="once", on_date=SATURDAY)
+        assert vet.occurs_on(SATURDAY) is True
+        assert vet.occurs_on(date(2026, 10, 17)) is False
+
+    def test_a_weekly_task_without_weekdays_is_refused(self):
+        with pytest.raises(ValueError):
+            make_task("bath", recurrence="weekly")
+
+    def test_a_one_off_task_without_a_date_is_refused(self):
+        with pytest.raises(ValueError):
+            make_task("vet", recurrence="once")
+
+    def test_an_unknown_recurrence_is_refused(self):
+        with pytest.raises(ValueError):
+            make_task("bath", recurrence="monthly")
+
+    def test_describe_mentions_recurrence_only_when_it_is_not_daily(self):
+        assert "daily" not in make_task("feed").describe()
+        bath = make_task("bath", recurrence="weekly", days_of_week={3, 0})
+        assert "(weekly on Mon, Thu)" in bath.describe()
+        vet = make_task("vet", recurrence="once", on_date=SATURDAY)
+        assert "(once on 2026-10-10)" in vet.describe()
+
+
+class TestUserRecurrence:
+    """The user plans one chosen day, from the tasks that belong to it."""
+
+    @pytest.fixture
+    def week(self, owner):
+        owner.add_task(make_task("feed", duration_minutes=15))
+        owner.add_task(make_task("bath", recurrence="weekly", days_of_week={5}))
+        owner.add_task(make_task("vet", recurrence="once", on_date=MONDAY))
+        return owner
+
+    def test_tasks_on_picks_the_tasks_that_belong_to_the_day(self, week):
+        assert [task.task_id for task in week.tasks_on(SATURDAY)] == ["feed", "bath"]
+        assert [task.task_id for task in week.tasks_on(MONDAY)] == ["feed", "vet"]
+
+    def test_request_schedule_plans_the_day_it_is_given(self, week):
+        plan = week.request_schedule("priority", SATURDAY)
+        assert plan.day == SATURDAY
+        assert [task.task_id for task in plan.tasks] == ["feed", "bath"]
+
+    def test_request_schedule_plans_today_by_default(self, week):
+        assert week.request_schedule("priority").day == date.today()
+
+    def test_the_alternative_plans_the_same_day_as_plan_a(self, week):
+        week.request_schedule("priority", SATURDAY)
+        alternative = week.request_alternative("shortest")
+        assert alternative.day == SATURDAY
+        assert alternative.contains_task("bath")
+
+    def test_a_recurring_event_only_blocks_its_own_days(self, owner):
+        owner.add_event("Work", time(9, 0), time(17, 0),
+                        recurrence="weekly", days_of_week={0, 1, 2, 3, 4})
+        assert owner.request_schedule("priority", MONDAY).contains_task("event_1")
+        assert not owner.request_schedule("priority", SATURDAY).contains_task("event_1")
+
+    def test_a_daily_task_is_not_blocked_by_a_weekly_prerequisite_on_its_off_days(self, week):
+        week.set_dependency("feed", "bath")
+        monday = week.request_schedule("priority", MONDAY)
+        assert monday.contains_task("feed")
+        assert monday.blocked_tasks() == []
+
+    def test_a_weekly_prerequisite_still_orders_the_day_it_happens(self, week):
+        week.set_dependency("feed", "bath")
+        saturday = week.request_schedule("priority", SATURDAY)
+        assert saturday.get_placement("feed")[0] >= saturday.get_placement("bath")[1]
