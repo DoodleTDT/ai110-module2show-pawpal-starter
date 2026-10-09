@@ -31,11 +31,13 @@ Also added a method that stores the saved daily schedule, so the user can come b
 
 - What constraints does your scheduler consider (for example: time, priority, preferences)?
 - How did you decide which constraints mattered most?
+The main constraint the scheduler has is the owner's sleep schedule. No tasks can be placed during that time. There are also fixed tasks that the scheduler cannot move or edit over. Daily tasks need to happen every day, and weekly tasks happen at least once. They cannot be left out. If a task requires another task to finish it (prerequisite), then that task must be placed before the other. After that, if a task has a preferred start time, then the scheduler will try to give it that spot. However, if two tasks have the same preferred start time, the one with the highest priority rating will take the spot first. And if their are any leftover tasks with no preferred time, then they will be placed depending on the plan. Plan A focuses on priority, and Plan B focuses on the shortest task.
 
 **b. Tradeoffs**
 
 - Describe one tradeoff your scheduler makes.
 - Why is that tradeoff reasonable for this scenario?
+
 
 ---
 
@@ -46,10 +48,12 @@ Also added a method that stores the saved daily schedule, so the user can come b
 - How did you use AI tools during this project (for example: design brainstorming, debugging, refactoring)?
 - What kinds of prompts or questions were most helpful?
 
+
 **b. Judgment and verification**
 
 - Describe one moment where you did not accept an AI suggestion as-is.
 - How did you evaluate or verify what the AI suggested?
+
 
 ---
 
@@ -60,10 +64,12 @@ Also added a method that stores the saved daily schedule, so the user can come b
 - What behaviors did you test?
 - Why were these tests important?
 
+
 **b. Confidence**
 
 - How confident are you that your scheduler works correctly?
 - What edge cases would you test next if you had more time?
+If I had more time, I'd test how the schedule deals with no time left to add to the list. While I did have this tested once, that was before I allowed the schedule to hold more than one day at a time. Multiple days allows tasks to be distibuted better, which means I need way more tasks to really fill up the days.
 
 ---
 
@@ -73,10 +79,13 @@ Also added a method that stores the saved daily schedule, so the user can come b
 
 - What part of this project are you most satisfied with?
 
+
 **b. What you would improve**
 
 - If you had another iteration, what would you improve or redesign?
 
+
 **c. Key takeaway**
 
 - What is one important thing you learned about designing systems or working with AI on this project?
+

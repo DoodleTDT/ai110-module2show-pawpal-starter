@@ -13,20 +13,22 @@ classDiagram
         +delete_task(task_id) None
         +set_priority(task_id, priority) None
         +set_time_preference(task_id, window, duration) None
+        +set_recurrence(task_id, recurrence, days_of_week, on_date) None
         +set_dependency(task_id, prerequisite_id) None
         +clear_dependency(task_id, prerequisite_id) None
         +dependencies_of(task_id) list~Task~
         +creates_cycle(task_id, prerequisite_id) bool
-        +add_event(title, start, end) None
+        +add_event(title, start, end, recurrence, days_of_week, on_date) None
         +get_pet(pet_id) Pet
         +tasks_for_pet(pet_id) list~Task~
         +tasks_for_species(species) list~Task~
         +tasks_by_pet() dict~str, list~Task~~
         +personal_tasks() list~Task~
         +awake_window() tuple
-        +request_schedule(strategy) Schedule
-        +request_alternative(strategy) Schedule
-        -_build_candidate(strategy, schedule_id, label) Schedule
+        +tasks_on(day) list~Task~
+        +request_schedule(strategy, day) Schedule
+        +request_alternative(strategy, day) Schedule
+        -_build_candidate(strategy, schedule_id, label, day) Schedule
         +compare_candidates() str
         +choose_schedule(schedule_id) Schedule
         +discard_unchosen(schedule_id) None
@@ -52,6 +54,12 @@ classDiagram
         +bool is_fixed
         +list~Pet~ pets
         +list~str~ depends_on
+        +str recurrence
+        +set~int~ days_of_week
+        +Date on_date
+        +set_recurrence(recurrence, days_of_week, on_date) None
+        +occurs_on(day) bool
+        +recurrence_label() str
         +is_pet_task() bool
         +is_for_pet(pet_id) bool
         +add_pet(pet) None
@@ -79,6 +87,7 @@ classDiagram
         +is_free(start, end) bool
         +sort_by_strategy(tasks) list~Task~
         +sort_by_dependencies(tasks) list~Task~
+        +missing_prerequisites(task) list~str~
         +dependencies_met(task) bool
         +earliest_start_for(task) Time
         +blocked_tasks() list~Task~
@@ -97,6 +106,8 @@ classDiagram
     class TimeHelpers {
         <<utility>>
         +int SEARCH_STEP
+        +tuple RECURRENCES
+        +tuple WEEKDAY_NAMES
         +to_minutes(moment) int
         +to_time(minutes) Time
         +overlaps(start_a, end_a, start_b, end_b) bool
@@ -111,5 +122,5 @@ classDiagram
     Schedule "0..*" ..> "0..*" Task : places
     User ..> Schedule : builds candidates
     Schedule ..> TimeHelpers : compares times with
-    Task ..> TimeHelpers : compares times with
+    Task ..> TimeHelpers : compares times, names weekdays with
     User ..> TimeHelpers : sizes events with
