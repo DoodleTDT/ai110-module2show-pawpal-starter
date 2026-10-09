@@ -37,7 +37,7 @@ The main constraint the scheduler has is the owner's sleep schedule. No tasks ca
 
 - Describe one tradeoff your scheduler makes.
 - Why is that tradeoff reasonable for this scenario?
-
+One tradeoff is that the scheduler does not recognize two tasks with the same category or type as something that can be done together. For example, if their are two tasks, one to feed a cat and one to feed a dog, the scheduler will seperate the two as they are. I considered fixing that for certain tasks, but since the scheduler already allows for multiple pets to be added to a task, it is redundant.
 
 ---
 
@@ -47,13 +47,14 @@ The main constraint the scheduler has is the owner's sleep schedule. No tasks ca
 
 - How did you use AI tools during this project (for example: design brainstorming, debugging, refactoring)?
 - What kinds of prompts or questions were most helpful?
+The AI was most helpful while coming up with the design for the code. While I had an idea of what classes and methods those classes needed, Claude kept suggesting possible functions or holes in the code that I hadn't considered. This made the immplementation of logic much smoother, as I wasn't still stuck on what needed to happen.
 
 
 **b. Judgment and verification**
 
 - Describe one moment where you did not accept an AI suggestion as-is.
 - How did you evaluate or verify what the AI suggested?
-
+As nice as it was for the AI to help with designing a plan, it was also the most error filled. Claude will add new classes that you didn't want, even if you specify to only use a certain amount. And sometimes it was user error, as Claude will fill in gaps I may have left in the prompt. The main thing was to continue to review over what it did and correct my parameters from there.
 
 ---
 
@@ -63,7 +64,7 @@ The main constraint the scheduler has is the owner's sleep schedule. No tasks ca
 
 - What behaviors did you test?
 - Why were these tests important?
-
+Tests made were surrounding the priority hill of the schedules. Testing if priority level beats the preferred time the user added. Testing which tasks will be added first if they all had the same priorty levels. If none of them had a preferred time. Would a owner task or appointment push everything back, or would the scheduler move it around with the others. The main tests were to make sure the schedules wouldn't shuffle anything out of place.
 
 **b. Confidence**
 
@@ -78,14 +79,14 @@ If I had more time, I'd test how the schedule deals with no time left to add to 
 **a. What went well**
 
 - What part of this project are you most satisfied with?
-
+I'm most satisfied with the implementation of two different schedules the user can choose between. Especially since some like schedules done in different ways.
 
 **b. What you would improve**
 
 - If you had another iteration, what would you improve or redesign?
-
+I would to improve the wording used for some of the scheduling UI. It's very plain and could be more user friendly. Color coding or marking the different tasks with emojis would also be something I'd add. And if the user has enough tasks, I'd like to make a possible third schedule they could choose from. I don't know what it sort by, but it could be nice.
 
 **c. Key takeaway**
 
 - What is one important thing you learned about designing systems or working with AI on this project?
-
+Having a good baseline for what the program you're creating is the most important thing I learned. And not just the first thing you create can be the plan you go for. The first draft is never the final one with AI, no matter fast it works.
