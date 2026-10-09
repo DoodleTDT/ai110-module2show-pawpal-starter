@@ -200,10 +200,11 @@ test_pawpalpy ..................................................................
 
 Describe your app in numbered steps so a reader can follow along without watching a video:
 
-1. <!-- Describe this step -->
-2. <!-- Describe this step -->
-3. <!-- Describe this step -->
-4. <!-- Describe this step -->
-5. <!-- Add more steps as needed -->
+1. User logs all of their pets that will be considered during scheduling
+2. User logs the time they will be awake to do the tasks
+3. User will add tasks based on the pet, date, daily or weekly, preferred starting time (if any), priority, and possible duration
+4. User will add conflicting tasks they need to do that may or may not be flexible
+5. When the User submits these tasks to the scheduler, they will recieve two different plans based on what the schedule could fit
+6. User chooses which schedule they prefer, saving it and discarding the other
 
 **Screenshot or video** *(optional)*: <!-- Insert a screenshot or link to a demo video here -->
